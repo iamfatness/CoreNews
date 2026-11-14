@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  # Placeholder services for CoreNews OSINT platform
+  # To be expanded as connectors and core services are implemented
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: corenews
+      POSTGRES_USER: corenews
+      POSTGRES_PASSWORD: changeme
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  # opensearch:
+  #   image: opensearchproject/opensearch:2
+  #   environment:
+  #     - discovery.type=single-node
+  #     - OPENSEARCH_INITIAL_ADMIN_PASSWORD=changeme
+  #   ports:
+  #     - "9200:9200"
+
+  # redis:
+  #   image: redis:7
+  #   ports:
+  #     - "6379:6379"
+
+volumes:
+  postgres_data:

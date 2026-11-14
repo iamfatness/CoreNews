@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
+from .routers import search
 
 app = FastAPI(
     title="CoreNews",
@@ -17,6 +18,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(search.router)
+
 @app.get("/")
 async def root():
     return {
@@ -29,5 +32,3 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "ok"}
-
-# TODO: Include routers for search, entities, connectors, etc.

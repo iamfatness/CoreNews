@@ -1,0 +1,1 @@
+# CoreNews backend package

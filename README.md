@@ -9,6 +9,9 @@ Aggregate free and free-tier public sources for entity research, threat intellig
 **v0.1.0 skeleton** — FastAPI backend with modular connectors. First keyless connector (crt.sh) is live. Free-tier API keys collected by OpenIntel bot.
 
 ## Quick Links
+- [Documentation index](docs/README.md)
+- [System specification](docs/spec/SYSTEM_SPEC.md)
+- [Build roadmap](docs/roadmap/ROADMAP.md)
 - [Platform Specification](docs/SPEC.md)
 - [Free Sources Inventory](docs/SOURCES.md)
 

@@ -147,6 +147,28 @@ class ResearchEvidenceTests(unittest.TestCase):
         self.assertEqual(report["evidence"][0]["source_url"], ofac_catalog.SOURCE_URL)
         self.assertEqual(report["evidence"][0]["source_snapshot_sha256"], old["id"])
         self.assertEqual(report["evidence"][0]["source_entry_id"], "100")
+        review_path = ROOT + f"/cases/{own}/evidence/{saved.json()['id']}/screening-review"
+        auth = headers("first")
+        self.assertIsNone(self.client.get(review_path, headers=auth).json())
+        self.assertEqual(self.client.get(review_path, headers=headers("second")).status_code, 404)
+        review = {"decision": "inconclusive", "rationale": "Compare the entity's official registry identifier.", "version": 0}
+        self.assertEqual(self.client.put(review_path, headers=headers("second"), json=review).status_code, 404)
+        initial = self.client.put(review_path, headers=auth, json=review)
+        self.assertEqual(initial.status_code, 200, initial.text)
+        self.assertEqual(initial.json()["version"], 1)
+        self.assertEqual(self.client.put(review_path, headers=auth, json=review).status_code, 409)
+        revised = {**review, "decision": "different_organization", "version": 1,
+                   "rationale": "Independent registry identifiers point to different organizations."}
+        response = self.client.put(review_path, headers=auth, json=revised)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["version"], 2)
+        self.assertEqual(self.client.put(review_path, headers=auth, json=revised).status_code, 409)
+        final_report = self.client.get(ROOT + f"/cases/{own}/report", headers=auth).json()
+        self.assertEqual(final_report["screening_reviews"], [response.json()])
+        self.assertEqual(final_report["screening_reviews"][0]["evidence_id"], final_report["evidence"][0]["id"])
+        history = self.client.get(ROOT + f"/cases/{own}/activity", headers=auth).json()["events"]
+        self.assertEqual([(event["action"], event["version"]) for event in history[:2]],
+                         [("screening_reviewed", 2), ("screening_reviewed", 1)])
         query["name"] = "Fixture alias"
         self.assertEqual(self.client.post(endpoint, headers=headers("first"), json=query).json()["records"], [])
         query["snapshot_id"] = "a" * 64

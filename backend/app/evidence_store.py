@@ -88,6 +88,17 @@ screening_entries = Table(
     Column("search_name", String(350), nullable=False, index=True),
     Column("programs_json", Text, nullable=False),
 )
+screening_reviews = Table(
+    "research_screening_reviews", metadata,
+    Column("workspace_id", String(128), primary_key=True),
+    Column("case_id", String(36), primary_key=True),
+    Column("evidence_id", String(36), ForeignKey(evidence.c.id), primary_key=True),
+    Column("decision", String(24), nullable=False),
+    Column("rationale", Text, nullable=False),
+    Column("version", Integer, nullable=False),
+    Column("updated_at", String(32), nullable=False),
+    ForeignKeyConstraint(["workspace_id", "case_id"], [cases.c.workspace_id, cases.c.id]),
+)
 activity = Table(
     "research_case_activity", metadata,
     Column("id", BigInteger().with_variant(Integer, "sqlite"), primary_key=True),
@@ -131,6 +142,46 @@ def case_activity(workspace_id: str, case_id: str, before: str | None, limit: in
         query = query.where(activity.c.id < cursor)
     with database(settings.database_url).connect() as conn:
         return conn.execute(query.order_by(activity.c.id.desc()).limit(limit)).mappings().all()
+
+
+def case_screening_reviews(workspace_id: str, case_id: str):
+    with database(settings.database_url).connect() as conn:
+        return conn.execute(select(screening_reviews).where(
+            screening_reviews.c.workspace_id == workspace_id, screening_reviews.c.case_id == case_id,
+        ).order_by(screening_reviews.c.evidence_id)).mappings().all()
+
+
+def get_screening_review(workspace_id: str, case_id: str, evidence_id: str):
+    with database(settings.database_url).connect() as conn:
+        return conn.execute(select(screening_reviews).where(
+            screening_reviews.c.workspace_id == workspace_id, screening_reviews.c.case_id == case_id,
+            screening_reviews.c.evidence_id == evidence_id,
+        )).mappings().one_or_none()
+
+
+def save_screening_review(workspace_id: str, case_id: str, evidence_id: str,
+                          decision: str, rationale: str, version: int):
+    changes = {"decision": decision, "rationale": rationale, "version": version + 1, "updated_at": now()}
+    if version == 0:
+        mutation = insert(screening_reviews).values(
+            workspace_id=workspace_id, case_id=case_id, evidence_id=evidence_id, **changes,
+        )
+    else:
+        mutation = update(screening_reviews).where(
+            screening_reviews.c.workspace_id == workspace_id, screening_reviews.c.case_id == case_id,
+            screening_reviews.c.evidence_id == evidence_id, screening_reviews.c.version == version,
+        ).values(**changes)
+    try:
+        with database(settings.database_url).begin() as conn:
+            row = conn.execute(mutation.returning(screening_reviews)).mappings().one_or_none()
+            if row is not None:
+                record_activity(conn, workspace_id, case_id, "screening_reviewed", evidence_id,
+                                row["updated_at"], version=row["version"])
+            return row
+    except IntegrityError:
+        if version == 0 and get_screening_review(workspace_id, case_id, evidence_id) is not None:
+            return None
+        raise
 
 
 def create_case(workspace_id: str, title: str):

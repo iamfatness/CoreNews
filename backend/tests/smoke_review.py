@@ -35,14 +35,20 @@ def main():
     results = json.loads(request(ROOT + "/screening/ofac", "POST", {"name": "Fixture Organization"}))
     candidate, = results["records"]
     evidence = json.loads(request(case_path + "/evidence", "PUT", candidate))
+    request(case_path + "/evidence/" + evidence["id"] + "/screening-review", "PUT", {
+        "decision": "inconclusive", "rationale": "Synthetic catalog fixture.", "version": 0,
+    })
     request(case_path + "/findings", "POST", {
         "kind": "finding", "body": "Fixture evidence reviewed.", "evidence_ids": [evidence["id"]],
     }, expected=201)
     report = json.loads(request(case_path + "/report"))
     assert report["evidence"][0]["source_date"] == "2026-11-01"
     assert report["findings"][0]["evidence_ids"] == [evidence["id"]]
+    assert report["screening_reviews"][0]["evidence_id"] == evidence["id"]
     activity = json.loads(request(case_path + "/activity"))
-    assert [entry["action"] for entry in activity["events"]] == ["finding_added", "evidence_saved", "case_created"]
+    assert [entry["action"] for entry in activity["events"]] == [
+        "finding_added", "screening_reviewed", "evidence_saved", "case_created",
+    ]
     print("Review stack passed workspace, screening evidence, report, and activity smoke checks.")
 
 

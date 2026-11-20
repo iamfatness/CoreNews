@@ -1,6 +1,8 @@
 import httpx
 from typing import List, Dict, Any
 
+RESULT_LIMIT = 50
+
 class CrtShConnector:
     """Keyless connector for Certificate Transparency logs via crt.sh."""
 
@@ -20,5 +22,5 @@ class CrtShConnector:
             "source": "crt.sh",
             "query": query,
             "count": len(results),
-            "results": results[:50],  # Limit for MVP
+            "results": results[:RESULT_LIMIT],
         }

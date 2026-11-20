@@ -30,9 +30,23 @@ docker compose up --build
 ```
 
 API will be available at http://localhost:8000
+- Research workspace: http://localhost:8000/research/
 - Docs: http://localhost:8000/docs
 - Health: http://localhost:8000/health
 - Example search: http://localhost:8000/search/crtsh?q=example.com
+
+### Search public certificate records
+
+Open the Research workspace, enter a domain such as `example.org`, and select a
+record to inspect its issuer, timestamps, and original crt.sh page. CoreNews
+shows up to 50 distinct certificate records per search. The result count
+distinguishes the records displayed from the number of rows reported by crt.sh.
+A certificate log alone cannot establish who operates a domain or whether the
+certificate is in use.
+
+The workspace uses `GET /search/records?q=example.org` for normalized records.
+The existing `/search/crtsh` endpoint returns source records in their original
+format. The backend needs outbound access to crt.sh for either endpoint.
 
 ## Architecture Overview
 - Ingestion layer with modular connectors (`backend/app/connectors/`)
@@ -45,4 +59,4 @@ API will be available at http://localhost:8000
 - Additional connectors (GDELT, Shodan, VirusTotal, etc.)
 - Database models and persistence
 - Entity resolution
-- Simple web UI
+- Extend the Research workspace to additional public sources

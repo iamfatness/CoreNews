@@ -73,6 +73,7 @@
               <button class="secondary" id="open-case-report" type="button" disabled>Findings and report</button>
               <button class="secondary" id="open-case-watches" type="button" disabled>Watches and alerts</button>
               <button class="secondary" id="view-workspace" type="button">Browse workspace evidence</button>
+              <button class="secondary" id="open-earthquake-map" type="button">Earthquake map</button>
               <button class="secondary" id="close-workspace" type="button">Close workspace</button>
             </div>
           </div>
@@ -98,6 +99,7 @@
             <option value="crt.sh">crt.sh</option>
             <option value="SEC EDGAR">SEC EDGAR</option>
             <option value="GDELT">GDELT</option>
+            <option value="USGS Earthquakes">USGS Earthquakes</option>
           </select>
         </div>
         <div id="results" aria-busy="false">
@@ -187,6 +189,40 @@
       <ul id="watch-list"></ul>
       <h3>Recent alerts</h3>
       <ul id="watch-alerts"></ul>
+    </div>
+  </dialog>
+  <dialog id="earthquake-dialog" class="case-dialog" aria-labelledby="earthquake-title">
+    <header class="report-toolbar">
+      <h2 id="earthquake-title">USGS earthquake map</h2>
+      <form method="dialog"><button class="secondary">Close map</button></form>
+    </header>
+    <div class="report-controls">
+      <form id="earthquake-filters" class="map-filters">
+        <label>Time window<select id="earthquake-window">
+          <option value="day">Past 24 hours</option><option value="week">Past seven days</option>
+        </select></label>
+        <label>Region<select id="earthquake-region">
+          <option value="world">Worldwide</option><option value="americas">Americas</option>
+          <option value="europe-africa">Europe and Africa</option><option value="asia-pacific">Asia and Pacific</option>
+        </select></label>
+        <label>Minimum magnitude<select id="earthquake-min">
+          <option value="2.5">2.5</option><option value="4">4.0</option><option value="5">5.0</option>
+        </select></label>
+        <button class="primary" type="submit">Update map</button>
+      </form>
+      <p id="earthquake-status" role="status"></p>
+      <svg id="earthquake-map" viewBox="0 0 720 360" role="img" aria-label="World map showing earthquake epicenters">
+        <image href="./assets/earth-land.svg" width="720" height="360"></image>
+        <g id="earthquake-markers"></g>
+      </svg>
+      <p class="report-meta">USGS Earthquakes · Made with Natural Earth. Epicenters are source estimates.</p>
+      <div class="case-actions"><button id="export-earthquakes" class="secondary" type="button" disabled>Download GeoJSON</button></div>
+      <div class="earthquake-details">
+        <section><h3>Events</h3><ul id="earthquake-list"></ul></section>
+        <section aria-labelledby="earthquake-detail-title">
+          <h3 id="earthquake-detail-title">Event details</h3><div id="earthquake-detail"></div>
+        </section>
+      </div>
     </div>
   </dialog>
 </body>

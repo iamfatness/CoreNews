@@ -67,6 +67,16 @@ select { max-width: 100%; }
 #watch-status:not(:empty) { margin-bottom: 8px; }
 #watch-list, #watch-alerts { overflow-wrap: anywhere; }
 #watch-list li, #watch-alerts li { margin-bottom: 14px; }
+.map-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; max-width: none; }
+.map-filters select { display: block; margin-top: 3px; }
+#earthquake-status { margin: 8px 0; }
+#earthquake-map { display: block; width: 100%; height: auto; background: #e2edf3; border: 1px solid var(--line); border-radius: 6px; }
+#earthquake-markers circle { fill: #bc5b27; stroke: white; stroke-width: 1.5; cursor: pointer; }
+#earthquake-markers circle[data-selected="true"] { fill: var(--indigo); stroke-width: 2.5; }
+.earthquake-details { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; overflow-wrap: anywhere; }
+#earthquake-list { margin: 8px 0; padding-left: 22px; max-height: 14rem; overflow: auto; }
+#earthquake-list button { text-align: left; margin-bottom: 5px; }
+@media (max-width: 650px) { .earthquake-details { grid-template-columns: minmax(0, 1fr); } }
 .report-toolbar {
   display: flex;
   justify-content: space-between;

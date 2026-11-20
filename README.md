@@ -134,6 +134,21 @@ result window. Open the linked source, save the record to the case, or mark
 the alert reviewed. Failed checks retry and appear in the watch status.
 Expired leases let the worker recover checks interrupted by a restart.
 
+### Earthquake map
+
+Open a case workspace and choose **Earthquake map** for public USGS events.
+Filter by day or week, region, and minimum magnitude. Select an event on the
+map or in the adjacent list to open its source page or save it to a case.
+**Download GeoJSON** exports the displayed events with longitude first,
+source links, and timestamps.
+
+The global overview uses generalized land polygons from
+[Natural Earth](https://www.naturalearthdata.com/downloads/110m-physical-vectors/110m-land/).
+Epicenters and magnitudes are USGS estimates that can change. A saved event
+preserves the values seen when it was collected. If snapshot retention is
+approved on your deployment, add `USGS Earthquakes` to
+`RESEARCH_SNAPSHOT_SOURCES` to capture and verify its metadata hash.
+
 ## Architecture Overview
 - Ingestion layer with modular connectors (`backend/app/connectors/`)
 - Storage: Postgres (OpenSearch planned)

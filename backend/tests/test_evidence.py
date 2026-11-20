@@ -17,9 +17,10 @@ from app.config import settings
 from app import watch_store, watch_worker
 from app.connectors.edgar import EdgarConnector
 from app.connectors.gdelt import normalize_news
+from app.connectors.usgs import normalize_earthquakes
 from app.evidence_store import database, evidence, metadata
 from app.main import app
-from app.routers import research, search
+from app.routers import geo, research, search
 
 ROOT = "/api/research"
 CERTIFICATES = [{"id": 123, "common_name": "example.org", "name_value": "example.org"}]
@@ -87,6 +88,33 @@ class ResearchEvidenceTests(unittest.TestCase):
         response = self.client.post(ROOT + "/cases", headers=headers(workspace), json={"title":title})
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()["id"]
+
+    def test_earthquake_region_handles_dateline_and_saves_original_record(self):
+        def feature(identifier, lat, lon, magnitude):
+            return {"id": identifier,
+                    "geometry": {"type":"Point", "coordinates":[lon, lat, 23]},
+                    "properties": {"title":identifier, "mag":magnitude, "time":1700000000000}}
+        events = normalize_earthquakes({"features": [
+            feature("east", 45, 178, 5.2), feature("west", 45, -178, 5.0),
+            feature("elsewhere", 40, -20, 5.5), feature("small", 32, 141, 2.9),
+            feature("outside-latitude", 96, 178, 5.7),
+        ]})
+        with patch.object(geo.usgs, "events", AsyncMock(return_value=events)) as load:
+            response = self.client.get(ROOT + "/geo/earthquakes", headers=headers("first"),
+                                       params={"region":"asia-pacific","window":"week","min_magnitude":5})
+            self.assertEqual(response.status_code, 200, response.text)
+            load.assert_awaited_once_with("week")
+        data = response.json()
+        self.assertEqual(data["available"], 2)
+        self.assertEqual([row["record"]["id"] for row in data["records"]], ["usgs:east", "usgs:west"])
+        case = self.create("first")
+        saved = self.save("first", case, data["records"][0])
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertEqual(saved.json()["record"]["longitude"], 178)
+        report = self.client.get(ROOT + f"/cases/{case}/report", headers=headers("first")).json()
+        self.assertEqual(report["evidence"][0]["date_label"], "Event time")
+        self.assertEqual(report["evidence"][0]["source_url"], "https://earthquake.usgs.gov/earthquakes/eventpage/east")
+        self.assertEqual(self.client.get(ROOT + "/geo/earthquakes").status_code, 401)
 
     def test_scheduled_watches_baseline_deduplicate_and_save_case_alert(self):
         case = self.create("first")

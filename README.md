@@ -118,6 +118,22 @@ browser print dialog with only the report. Both formats work from saved case
 data, including when an upstream source is unavailable. A verified hash
 checks the saved metadata bytes, while the citation links back to the source.
 
+### Watches and alerts
+
+After validating source access on the deployment host, set
+`RESEARCH_WATCHES_ENABLED=true`, rerun the evidence store initializer to add
+the watch tables, and start the optional worker with
+`docker compose --profile monitoring up -d watch-worker`. Enable SEC EDGAR
+or GDELT separately using the settings above. Use one worker initially and
+keep the source settings consistent between the backend and worker.
+
+Select a case, open **Watches and alerts**, and add a watch by SEC CIK or
+public news topic. The first successful check records a baseline. Subsequent
+checks produce an alert for each previously unseen record in the source's
+result window. Open the linked source, save the record to the case, or mark
+the alert reviewed. Failed checks retry and appear in the watch status.
+Expired leases let the worker recover checks interrupted by a restart.
+
 ## Architecture Overview
 - Ingestion layer with modular connectors (`backend/app/connectors/`)
 - Storage: Postgres (OpenSearch planned)

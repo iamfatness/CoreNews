@@ -50,7 +50,7 @@ select { max-width: 100%; }
 #record-status:not(:empty), #workspace-status:not(:empty) { margin-top: 8px; }
 #citation-text { width: 100%; margin-top: 8px; }
 
-#case-report-dialog {
+#case-report-dialog, .case-dialog {
   width: min(94vw, 62rem);
   max-height: 92vh;
   padding: 0;
@@ -59,7 +59,14 @@ select { max-width: 100%; }
   background: var(--paper);
   color: var(--ink);
 }
-#case-report-dialog::backdrop { background: rgb(17 28 41 / 65%); }
+#case-report-dialog::backdrop, .case-dialog::backdrop { background: rgb(17 28 41 / 65%); }
+.case-dialog h3 { margin-top: 18px; }
+#new-watch input { font: inherit; padding: 8px 10px; border: 1px solid #8a95a5; border-radius: 6px; width: min(100%, 28rem); }
+#new-watch label { margin-top: 8px; }
+#new-watch button { display: block; margin-top: 10px; }
+#watch-status:not(:empty) { margin-bottom: 8px; }
+#watch-list, #watch-alerts { overflow-wrap: anywhere; }
+#watch-list li, #watch-alerts li { margin-bottom: 14px; }
 .report-toolbar {
   display: flex;
   justify-content: space-between;

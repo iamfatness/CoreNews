@@ -71,6 +71,7 @@
               <select id="active-case"></select>
               <button class="secondary" id="view-case" type="button" disabled>View saved evidence</button>
               <button class="secondary" id="open-case-report" type="button" disabled>Findings and report</button>
+              <button class="secondary" id="open-case-watches" type="button" disabled>Watches and alerts</button>
               <button class="secondary" id="view-workspace" type="button">Browse workspace evidence</button>
               <button class="secondary" id="close-workspace" type="button">Close workspace</button>
             </div>
@@ -163,6 +164,30 @@
       </form>
     </div>
     <article id="report-document" class="report-document" aria-label="Report preview"></article>
+  </dialog>
+  <dialog id="case-watch-dialog" class="case-dialog" aria-labelledby="watch-dialog-title">
+    <header class="report-toolbar">
+      <h2 id="watch-dialog-title">Case watches and alerts</h2>
+      <form method="dialog"><button class="secondary">Close watches</button></form>
+    </header>
+    <div class="report-controls">
+      <p id="watch-status" role="status"></p>
+      <button class="secondary" id="watch-refresh" type="button">Refresh watches</button>
+      <form id="new-watch" hidden>
+        <label for="watch-source">Source</label><select id="watch-source"></select>
+        <label for="watch-query" id="watch-query-label">SEC CIK</label>
+        <input id="watch-query" maxlength="120" required>
+        <label for="watch-interval">Check interval</label>
+        <select id="watch-interval">
+          <option value="1440">Daily</option><option value="360">Every six hours</option><option value="60">Hourly</option>
+        </select>
+        <button class="primary" type="submit">Create watch</button>
+      </form>
+      <h3>Scheduled checks</h3>
+      <ul id="watch-list"></ul>
+      <h3>Recent alerts</h3>
+      <ul id="watch-alerts"></ul>
+    </div>
   </dialog>
 </body>
 </html>

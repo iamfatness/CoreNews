@@ -25,6 +25,7 @@
             <option value="crtsh">Domain certificates · crt.sh</option>
             <option value="edgar">Company filings · SEC EDGAR</option>
             <option value="gdelt">News coverage · GDELT</option>
+            <option value="cisa">Remediation advisories · CISA KEV</option>
             <option value="compare">Compare sources</option>
           </select>
           <div id="single-query">
@@ -42,6 +43,8 @@
             <input id="compare-edgar" maxlength="253" placeholder="AAPL">
             <label for="compare-gdelt">Topic for GDELT</label>
             <input id="compare-gdelt" maxlength="120" placeholder="port strike">
+            <label for="compare-cisa">CVE identifier for CISA KEV</label>
+            <input id="compare-cisa" maxlength="21" placeholder="CVE-2024-1234">
           </fieldset>
           <button class="primary" id="start-search" type="submit">Search</button>
         </form>
@@ -103,6 +106,7 @@
             <option value="GDELT">GDELT</option>
             <option value="USGS Earthquakes">USGS Earthquakes</option>
             <option value="OFAC SDN">OFAC SDN</option>
+            <option value="CISA KEV">CISA KEV</option>
           </select>
         </div>
         <div id="results" aria-busy="false">

@@ -17,6 +17,7 @@ from sqlalchemy.schema import CreateSchema, DropSchema
 
 from app.config import settings
 from app import ofac_catalog, watch_store, watch_worker
+from app.connectors.cisa_kev import CATALOG, normalize_catalog
 from app.connectors.edgar import EdgarConnector
 from app.connectors.gdelt import normalize_news
 from app.connectors.usgs import normalize_earthquakes
@@ -180,6 +181,40 @@ class ResearchEvidenceTests(unittest.TestCase):
         self.assertEqual(row["record_id"], selection["record"]["id"])
         self.assertEqual(row["source_url"], selection["record"]["source_url"])
         self.assertEqual(row["verification"], "not_captured")
+
+    def test_cisa_exact_advisory_lookup_stores_remediation_provenance(self):
+        payload = {"count": 1, "catalogVersion": "fixture-v1", "vulnerabilities": [{
+            "cveID": "CVE-2024-1234", "vulnerabilityName": "Fixture product advisory",
+            "vendorProject": "Fixture vendor", "product": "Fixture product",
+            "dateAdded": "2026-11-01", "dueDate": "2026-11-22",
+            "requiredAction": "Apply updates using the vendor guidance.",
+            "shortDescription": "Omitted metadata.", "notes": "Omitted notes.",
+        }]}
+        entry, = normalize_catalog(payload).values()
+        with self.assertRaisesRegex(ValueError, "complete"):
+            normalize_catalog({**payload, "count": 2})
+        self.assertEqual(self.search("first", "cisa", entry.cve).status_code, 503)
+        with patch.object(settings, "cisa_kev_enabled", True), \
+             patch.object(research.cisa, "catalog", AsyncMock(return_value={entry.cve: entry})) as catalog:
+            self.assertEqual(self.search("first", "cisa", "example.org").status_code, 422)
+            catalog.assert_not_awaited()
+            self.assertEqual(self.search("first", "cisa", "CVE-2024-5678").json()["records"], [])
+            result = self.search("first", "cisa", " cve-2024-1234 ")
+            self.assertEqual(result.status_code, 200, result.text)
+            source = self.client.get(ROOT + "/sources", headers=headers("first")).json()
+            self.assertIn("cisa", [item["id"] for item in source if item["enabled"]])
+        selection, = result.json()["records"]
+        self.assertEqual(selection["record"]["action"], payload["vulnerabilities"][0]["requiredAction"])
+        self.assertNotIn("notes", selection["record"])
+        self.assertNotIn("short_description", selection["record"])
+        case = self.create("first")
+        saved = self.save("first", case, selection)
+        self.assertEqual(saved.status_code, 200, saved.text)
+        report = self.client.get(ROOT + f"/cases/{case}/report", headers=headers("first")).json()
+        citation, = report["evidence"]
+        self.assertEqual(citation["source_version"], "fixture-v1")
+        self.assertEqual(citation["source_date"], "2026-11-01")
+        self.assertEqual(citation["source_url"], CATALOG + "?search_api_fulltext=" + entry.cve)
 
     def test_earthquake_region_handles_dateline_and_saves_original_record(self):
         def feature(identifier, lat, lon, magnitude):

@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
     edgar_user_agent: str | None = None
     gdelt_enabled: bool = False
+    cisa_kev_enabled: bool = False
     research_watches_enabled: bool = False
     research_workspace_token_hashes: dict[str, str] = Field(default_factory=dict)
     research_signing_key: SecretStr | None = None

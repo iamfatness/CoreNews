@@ -60,6 +60,7 @@ environment, configure these server settings before starting the app:
 | --- | --- |
 | `EDGAR_USER_AGENT` | Your application or organization name and contact email. Follow the SEC's [EDGAR access guidance](https://www.sec.gov/search-filings/edgar-search-assistance/accessing-edgar-data). |
 | `GDELT_ENABLED` | Set to `true` after verifying upstream access and metadata policy on the deployment host. The default is disabled. |
+| `CISA_KEV_ENABLED` | Set to `true` after verifying access to CISA's public catalog mirror from the deployment host. The default is disabled. |
 | `RESEARCH_WORKSPACE_TOKEN_HASHES` | JSON object mapping workspace names to unique, lowercase SHA-256 digests. Generate an independent random key for each workspace and give the raw key only to the appropriate tester. |
 | `RESEARCH_SIGNING_KEY` | An independent random server secret of at least 32 bytes. |
 | `RESEARCH_SNAPSHOT_SOURCES` | Optional JSON array of source labels whose normalized metadata may be kept as a verifiable snapshot. Use the labels `crt.sh` and `SEC EDGAR`. The default enables no snapshot hashes. |
@@ -103,6 +104,19 @@ The test suite uses SQLite by default. To exercise it against a dedicated test
 PostgreSQL server, set `CORENEWS_TEST_DATABASE_URL` and run
 `python -m unittest discover -s tests -v` from `backend/`. The evidence tests
 create and remove a unique schema per test.
+
+### CISA remediation advisories
+
+After enabling the source, open a workspace and select **Remediation
+advisories**. Enter one CVE identifier. A matching record provides CISA's
+remediation action when supplied, the catalog version and addition date,
+and the deadline for covered federal agencies when supplied. Check the
+vendor's advisory for product and version applicability. A saved record
+carries its CVE and original source citation into the case report.
+
+The lookup reads only [CISA's public KEV mirror](https://github.com/cisagov/kev-data).
+CoreNews caches the successful catalog fetch for five minutes. An empty result
+means the CVE is absent from the catalog version retrieved.
 
 ### Findings and case reports
 

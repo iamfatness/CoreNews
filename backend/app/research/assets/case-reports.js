@@ -99,6 +99,7 @@ function buildReport(report, onEdit) {
     if (item.source_snapshot_sha256) {
       entry.append(node("p", "OFAC list entry " + item.source_entry_id + " · Snapshot SHA-256 " + item.source_snapshot_sha256, "report-meta"));
     }
+    if (item.source_version) entry.append(node("p", "Catalog version " + item.source_version, "report-meta"));
     const states = {
       verified: "Saved metadata hash verified",
       mismatch: "Saved metadata hash mismatch",

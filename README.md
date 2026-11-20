@@ -118,6 +118,14 @@ browser print dialog with only the report. Both formats work from saved case
 data, including when an upstream source is unavailable. A verified hash
 checks the saved metadata bytes, while the citation links back to the source.
 
+### Case activity
+
+Rerun the evidence store initializer before using **Case activity**. It shows
+case creation, first evidence saves, and report entry revisions from the time
+the activity table is installed. Entries include the action, timestamp, and
+revision where applicable. The workspace key scopes the history to the
+selected case. Person-level attribution requires individual sign-in.
+
 ### Watches and alerts
 
 After validating source access on the deployment host, set

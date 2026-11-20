@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from sqlalchemy import (
     and_,
-    BigInteger, Boolean, Column, ForeignKey, ForeignKeyConstraint, Integer, MetaData, String, Table, Text, UniqueConstraint,
+    BigInteger, Boolean, Column, ForeignKey, ForeignKeyConstraint, Index, Integer, MetaData, String, Table, Text, UniqueConstraint,
     create_engine, insert, select, update,
 )
 from sqlalchemy.exc import IntegrityError
@@ -88,6 +88,19 @@ screening_entries = Table(
     Column("search_name", String(350), nullable=False, index=True),
     Column("programs_json", Text, nullable=False),
 )
+activity = Table(
+    "research_case_activity", metadata,
+    Column("id", BigInteger().with_variant(Integer, "sqlite"), primary_key=True),
+    Column("entry_key", String(36), nullable=False, unique=True),
+    Column("workspace_id", String(128), nullable=False),
+    Column("case_id", String(36), nullable=False),
+    Column("action", String(24), nullable=False),
+    Column("target_id", String(36), nullable=False),
+    Column("version", Integer),
+    Column("occurred_at", String(32), nullable=False),
+    ForeignKeyConstraint(["workspace_id", "case_id"], [cases.c.workspace_id, cases.c.id]),
+)
+Index("ix_research_case_activity_scope", activity.c.workspace_id, activity.c.case_id, activity.c.id)
 
 
 @lru_cache(maxsize=1)
@@ -103,10 +116,28 @@ def digest(payload: str) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def record_activity(conn, workspace_id, case_id, action, target_id, occurred_at, version=None):
+    conn.execute(insert(activity).values(
+        entry_key=str(uuid4()), workspace_id=workspace_id, case_id=case_id, action=action, target_id=target_id,
+        occurred_at=occurred_at, version=version,
+    ))
+
+
+def case_activity(workspace_id: str, case_id: str, before: str | None, limit: int):
+    scope = (activity.c.workspace_id == workspace_id, activity.c.case_id == case_id)
+    query = select(activity).where(*scope)
+    if before is not None:
+        cursor = select(activity.c.id).where(*scope, activity.c.entry_key == before).scalar_subquery()
+        query = query.where(activity.c.id < cursor)
+    with database(settings.database_url).connect() as conn:
+        return conn.execute(query.order_by(activity.c.id.desc()).limit(limit)).mappings().all()
+
+
 def create_case(workspace_id: str, title: str):
     values = {"workspace_id": workspace_id, "id": str(uuid4()), "title": title, "created_at": now()}
     with database(settings.database_url).begin() as conn:
         conn.execute(insert(cases).values(**values))
+        record_activity(conn, workspace_id, values["id"], "case_created", values["id"], values["created_at"])
     return values
 
 
@@ -190,19 +221,24 @@ def create_finding(workspace_id: str, case_id: str, kind: str, body: str, eviden
     }
     with database(settings.database_url).begin() as conn:
         conn.execute(insert(findings).values(**values))
+        record_activity(conn, workspace_id, case_id, "finding_added", values["id"], timestamp, version=1)
     return values
 
 
 def update_finding(workspace_id: str, case_id: str, finding_id: str, version: int,
                    kind: str, body: str, evidence_ids: list[str]):
+    timestamp = now()
     with database(settings.database_url).begin() as conn:
-        return conn.execute(update(findings).where(
+        row = conn.execute(update(findings).where(
             findings.c.workspace_id == workspace_id, findings.c.case_id == case_id,
             findings.c.id == finding_id, findings.c.version == version,
         ).values(
             kind=kind, body=body, evidence_ids=json.dumps(evidence_ids),
-            version=version + 1, updated_at=now(),
+            version=version + 1, updated_at=timestamp,
         ).returning(findings)).mappings().one_or_none()
+        if row is not None:
+            record_activity(conn, workspace_id, case_id, "finding_edited", finding_id, timestamp, version=row["version"])
+        return row
 
 
 def snapshot_state(row) -> str:
@@ -222,6 +258,7 @@ def save_record(workspace_id: str, case_id: str, record_id: str, payload: str, s
     try:
         with engine.begin() as conn:
             conn.execute(insert(evidence).values(**values))
+            record_activity(conn, workspace_id, case_id, "evidence_saved", values["id"], values["saved_at"])
     except IntegrityError:
         # The unique key preserves the first capture on repeated or racing saves.
         with engine.connect() as conn:

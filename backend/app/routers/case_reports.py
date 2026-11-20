@@ -4,7 +4,7 @@ import json
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field, StringConstraints, ValidationError, computed_field
 
 from .. import evidence_store as store
@@ -63,6 +63,18 @@ class CaseReport(BaseModel):
     findings: list[FindingDetail]
     evidence: list[ReportEvidence]
     uncited_findings: int
+
+
+class ActivityEvent(BaseModel):
+    action: Literal["case_created", "evidence_saved", "finding_added", "finding_edited"]
+    target_id: UUID
+    occurred_at: str
+    version: int | None
+
+
+class ActivityPage(BaseModel):
+    events: list[ActivityEvent]
+    next_before: UUID | None
 
 
 def describe_finding(row) -> FindingDetail:
@@ -127,3 +139,16 @@ def read_report(case_id: UUID, workspace_id: Workspace):
         case=CaseSummary(**case), exported_at=store.now(), findings=findings, evidence=evidence,
         uncited_findings=sum(item.uncited for item in findings),
     )
+
+
+@router.get("/{case_id}/activity", response_model=ActivityPage)
+def read_activity(
+    case_id: UUID,
+    workspace_id: Workspace,
+    before: UUID | None = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+):
+    require_case(workspace_id, case_id)
+    rows = store.case_activity(workspace_id, str(case_id), str(before) if before else None, limit + 1)
+    next_before = rows[limit - 1]["entry_key"] if len(rows) > limit else None
+    return ActivityPage(events=[ActivityEvent(**row) for row in rows[:limit]], next_before=next_before)

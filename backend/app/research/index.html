@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Research · CoreNews</title>
   <link rel="stylesheet" href="./assets/research.css">
-  <script src="./assets/research.js" defer></script>
+  <script src="./assets/research.js" type="module"></script>
 </head>
 <body>
   <header>
@@ -70,6 +70,7 @@
             <div class="case-actions">
               <select id="active-case"></select>
               <button class="secondary" id="view-case" type="button" disabled>View saved evidence</button>
+              <button class="secondary" id="open-case-report" type="button" disabled>Findings and report</button>
               <button class="secondary" id="view-workspace" type="button">Browse workspace evidence</button>
               <button class="secondary" id="close-workspace" type="button">Close workspace</button>
             </div>
@@ -129,5 +130,39 @@
     </div>
     <noscript><p class="wrap">Enable JavaScript to search certificate records.</p></noscript>
   </main>
+  <dialog id="case-report-dialog" aria-labelledby="report-dialog-title">
+    <header class="report-toolbar">
+      <h2 id="report-dialog-title">Case findings and report</h2>
+      <form method="dialog"><button class="secondary">Close report</button></form>
+    </header>
+    <div class="report-controls">
+      <p id="report-status" role="status"></p>
+      <div class="case-actions">
+        <button class="secondary" id="report-refresh" type="button">Refresh report</button>
+        <button class="secondary" id="report-json" type="button" disabled>Download JSON</button>
+        <button class="primary" id="report-print" type="button" disabled>Print or save PDF</button>
+      </div>
+      <form id="finding-form" hidden>
+        <h3 id="finding-form-title">Add a finding or question</h3>
+        <label for="finding-kind">Entry type</label>
+        <select id="finding-kind">
+          <option value="finding">Finding</option>
+          <option value="question">Open question</option>
+        </select>
+        <label for="finding-body">Entry text</label>
+        <textarea id="finding-body" rows="4" maxlength="5000" required></textarea>
+        <fieldset>
+          <legend>Cite saved evidence</legend>
+          <p id="finding-no-evidence" hidden>Save records to this case to cite them here.</p>
+          <div id="finding-citations"></div>
+        </fieldset>
+        <div class="case-actions">
+          <button class="primary" id="finding-save" type="submit">Save entry</button>
+          <button class="secondary" id="finding-cancel" type="button" hidden>Cancel edit</button>
+        </div>
+      </form>
+    </div>
+    <article id="report-document" class="report-document" aria-label="Report preview"></article>
+  </dialog>
 </body>
 </html>

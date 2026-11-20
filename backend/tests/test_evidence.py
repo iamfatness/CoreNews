@@ -193,3 +193,62 @@ class ResearchEvidenceTests(unittest.TestCase):
         self.assertEqual(self.client.get(ROOT + "/entities/domain/org.example", headers=headers("first")).json()["records"], [])
         filtered = self.client.get(ROOT + "/evidence?source=gdelt", headers=headers("first")).json()["records"]
         self.assertEqual([item["record"]["source"] for item in filtered], ["GDELT"])
+
+    def test_case_report_keeps_citations_and_flags_uncited_findings_offline(self):
+        case = self.create("first", "Case report")
+        path = ROOT + f"/cases/{case}"
+        with patch.object(research.edgar, "_request", AsyncMock(return_value=FILINGS)):
+            selection = self.search("first", "edgar", "320193").json()["records"][0]
+        saved = self.save("first", case, selection).json()
+        for entry in (
+            {"kind": "finding", "body": "Annual report filed.", "evidence_ids": [saved["id"], saved["id"]]},
+            {"kind": "finding", "body": "Confirm publication date."},
+            {"kind": "question", "body": "What does the next filing say?"},
+        ):
+            response = self.client.post(path + "/findings", headers=headers("first"), json=entry)
+            self.assertEqual(response.status_code, 201, response.text)
+        with patch.object(research.edgar, "_request", AsyncMock(side_effect=httpx.ReadTimeout("offline"))):
+            response = self.client.get(path + "/report", headers=headers("first"))
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+        report = response.json()
+        self.assertEqual(report["uncited_findings"], 1)
+        self.assertEqual(report["schema_version"], 1)
+        entries = {item["body"]:item for item in report["findings"]}
+        self.assertEqual(entries["Annual report filed."]["evidence_ids"], [saved["id"]])
+        self.assertTrue(entries["Confirm publication date."]["uncited"])
+        self.assertFalse(entries["What does the next filing say?"]["uncited"])
+        self.assertEqual(report["evidence"][0]["verification"], "verified")
+        self.assertEqual(report["evidence"][0]["source_url"], selection["record"]["source_url"])
+        self.assertEqual(report["evidence"][0]["snapshot_sha256"], saved["snapshot_sha256"])
+        with self.engine.begin() as connection:
+            connection.execute(update(evidence).where(evidence.c.id == saved["id"]).values(record_json="altered"))
+        changed = self.client.get(path + "/report", headers=headers("first")).json()["evidence"][0]
+        self.assertEqual(changed["verification"], "mismatch")
+        self.assertFalse(changed["metadata_available"])
+        self.assertIsNone(changed["source_url"])
+
+    def test_case_report_rejects_foreign_citations_and_stale_edits(self):
+        owner = self.create("first")
+        another_case = self.create("first")
+        foreign_workspace = self.create("second")
+        with patch.object(search.crtsh, "search_domain", AsyncMock(return_value=CERTIFICATES)):
+            selection = self.search("first", "crtsh", "example.org").json()["records"][0]
+        saved = self.save("first", owner, selection).json()
+        body = {"kind": "finding", "body": "Case note", "evidence_ids": [saved["id"]]}
+        owner_path = ROOT + f"/cases/{owner}"
+        for case_id, key in ((another_case, "first"), (foreign_workspace, "second")):
+            response = self.client.post(ROOT + f"/cases/{case_id}/findings", headers=headers(key), json=body)
+            self.assertEqual(response.status_code, 422, response.text)
+        self.assertEqual(self.client.get(owner_path + "/report", headers=headers("second")).status_code, 404)
+        created = self.client.post(owner_path + "/findings", headers=headers("first"), json=body).json()
+        edit_path = owner_path + "/findings/" + created["id"]
+        update_body = {**body, "body": "Corrected note", "version": created["version"]}
+        self.assertEqual(self.client.put(edit_path, headers=headers("second"), json=update_body).status_code, 404)
+        edited = self.client.put(edit_path, headers=headers("first"), json=update_body)
+        self.assertEqual(edited.status_code, 200, edited.text)
+        self.assertEqual(edited.json()["version"], 2)
+        stale = self.client.put(edit_path, headers=headers("first"), json={**update_body, "body": "Stale edit"})
+        self.assertEqual(stale.status_code, 409)
+        report = self.client.get(owner_path + "/report", headers=headers("first")).json()
+        self.assertEqual(report["findings"][0]["body"], "Corrected note")

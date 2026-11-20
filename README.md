@@ -102,6 +102,22 @@ PostgreSQL server, set `CORENEWS_TEST_DATABASE_URL` and run
 `python -m unittest discover -s tests -v` from `backend/`. The evidence tests
 create and remove a unique schema per test.
 
+### Findings and case reports
+
+If the research tables are already initialized, rerun
+`docker compose exec backend python -m app.evidence_store` to add the findings
+table. This initialization leaves existing cases and saved evidence in place.
+Choose a case and open **Findings and report**. Add a finding or open question
+and select evidence saved in that case. An uncited finding remains clearly
+marked in the report. If a finding changed since it was opened for editing,
+refresh the report and reopen the latest version before saving.
+
+**Download JSON** exports the case, findings, citation IDs, source links,
+timestamps, and snapshot integrity status. **Print or save PDF** opens the
+browser print dialog with only the report. Both formats work from saved case
+data, including when an upstream source is unavailable. A verified hash
+checks the saved metadata bytes, while the citation links back to the source.
+
 ## Architecture Overview
 - Ingestion layer with modular connectors (`backend/app/connectors/`)
 - Storage: Postgres (OpenSearch planned)

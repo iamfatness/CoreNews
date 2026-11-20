@@ -11,6 +11,7 @@ from ..config import settings
 from ..connectors.edgar import EdgarConnector, FilingRecord, UnknownFiler, normalize_filer
 from ..connectors.gdelt import GdeltConnector, NewsRecord, news_query
 from ..connectors.usgs import EarthquakeRecord
+from ..ofac_catalog import ScreeningCandidate
 from ..records import CertificateRecord, normalize_domain
 from ..research_entities import EntityKind, entity_matches, observation_time
 from ..workspace_access import issue_proof, valid_proof, workspace
@@ -21,7 +22,10 @@ edgar = EdgarConnector()
 gdelt = GdeltConnector()
 Workspace = Annotated[str, Depends(workspace)]
 Source = Literal["crtsh", "edgar", "gdelt"]
-Record = Annotated[CertificateRecord | FilingRecord | NewsRecord | EarthquakeRecord, Field(discriminator="record_type")]
+Record = Annotated[
+    CertificateRecord | FilingRecord | NewsRecord | EarthquakeRecord | ScreeningCandidate,
+    Field(discriminator="record_type"),
+]
 record_json = TypeAdapter(Record)
 SCAN_LIMIT = 500
 SOURCES = {

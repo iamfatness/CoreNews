@@ -73,6 +73,21 @@ watch_observations = Table(
     Column("reviewed", Boolean, nullable=False),
     UniqueConstraint("watch_id", "record_id"),
 )
+screening_snapshots = Table(
+    "research_screening_snapshots", metadata,
+    Column("id", String(64), primary_key=True),
+    Column("published_on", String(10), nullable=False),
+    Column("imported_at", String(32), nullable=False),
+    Column("entity_count", Integer, nullable=False),
+)
+screening_entries = Table(
+    "research_screening_entities", metadata,
+    Column("snapshot_id", String(64), ForeignKey(screening_snapshots.c.id), primary_key=True),
+    Column("uid", String(24), primary_key=True),
+    Column("name", String(350), nullable=False),
+    Column("search_name", String(350), nullable=False, index=True),
+    Column("programs_json", Text, nullable=False),
+)
 
 
 @lru_cache(maxsize=1)

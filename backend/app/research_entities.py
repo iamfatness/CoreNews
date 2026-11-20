@@ -3,6 +3,7 @@ from typing import Literal
 from .connectors.edgar import FilingRecord
 from .connectors.gdelt import NewsRecord
 from .connectors.usgs import EarthquakeRecord
+from .ofac_catalog import ScreeningCandidate
 from .records import CertificateRecord, normalize_domain
 
 EntityKind = Literal["domain", "company"]
@@ -15,7 +16,7 @@ def entity_domain(value: str) -> str | None:
         return None
 
 
-def entity_matches(record: CertificateRecord | FilingRecord | NewsRecord | EarthquakeRecord, kind: EntityKind, key: str) -> bool:
+def entity_matches(record: CertificateRecord | FilingRecord | NewsRecord | EarthquakeRecord | ScreeningCandidate, kind: EntityKind, key: str) -> bool:
     if kind == "company":
         return isinstance(record, FilingRecord) and record.cik == key
     if isinstance(record, CertificateRecord):
@@ -25,7 +26,9 @@ def entity_matches(record: CertificateRecord | FilingRecord | NewsRecord | Earth
     return False
 
 
-def observation_time(record: CertificateRecord | FilingRecord | NewsRecord | EarthquakeRecord) -> tuple[str, str]:
+def observation_time(record: CertificateRecord | FilingRecord | NewsRecord | EarthquakeRecord | ScreeningCandidate) -> tuple[str, str]:
+    if isinstance(record, ScreeningCandidate):
+        return record.published_on.isoformat(), "SDN snapshot published"
     if isinstance(record, EarthquakeRecord) and record.occurred_at:
         return record.occurred_at.isoformat(), "Event time"
     if isinstance(record, FilingRecord) and record.filed_on:

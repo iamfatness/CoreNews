@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .config import settings
-from .routers import case_reports, geo, monitoring, research, search
+from .routers import case_reports, geo, monitoring, research, screening, search
 
 app = FastAPI(
     title="CoreNews",
@@ -26,6 +26,7 @@ app.include_router(research.router)
 app.include_router(case_reports.router)
 app.include_router(monitoring.router)
 app.include_router(geo.router)
+app.include_router(screening.router)
 app.mount(
     "/research",
     StaticFiles(directory=Path(__file__).with_name("research"), html=True),

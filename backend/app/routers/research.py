@@ -263,9 +263,7 @@ def verify_evidence(case_id: UUID, evidence_id: UUID, workspace_id: Workspace):
     row = store.get_evidence(workspace_id, str(case_id), str(evidence_id))
     if row is None:
         raise HTTPException(404, "Evidence not found.")
-    expected = row["snapshot_sha256"]
-    if expected is None:
-        return {"status": "not_captured"}
-    if store.digest(row["record_json"]) != expected:
-        return {"status": "mismatch"}
-    return {"status": "verified", "sha256": expected}
+    state = store.snapshot_state(row)
+    if state == "verified":
+        return {"status": state, "sha256": row["snapshot_sha256"]}
+    return {"status": state}

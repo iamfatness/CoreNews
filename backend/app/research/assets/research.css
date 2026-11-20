@@ -49,6 +49,74 @@ select { max-width: 100%; }
 #source-notice { white-space: pre-line; }
 #record-status:not(:empty), #workspace-status:not(:empty) { margin-top: 8px; }
 #citation-text { width: 100%; margin-top: 8px; }
+
+#case-report-dialog {
+  width: min(94vw, 62rem);
+  max-height: 92vh;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--ink);
+}
+#case-report-dialog::backdrop { background: rgb(17 28 41 / 65%); }
+.report-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px clamp(12px, 3vw, 28px);
+}
+.report-toolbar h2 { font-size: 18px; }
+.report-toolbar form { margin: 0; }
+.report-controls { padding: 16px clamp(12px, 3vw, 28px); }
+#finding-form { max-width: none; }
+#finding-form > label { margin-top: 10px; }
+#finding-body { width: 100%; }
+#finding-form fieldset { margin: 10px 0 0; border: 1px solid var(--line); border-radius: 6px; }
+#finding-citations { max-height: 12rem; overflow: auto; }
+#finding-form .citation-choice { display: grid; grid-template-columns: max-content 1fr; gap: 8px; align-items: start; }
+.report-document {
+  margin: 0 clamp(12px, 3vw, 28px) 24px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: clamp(16px, 3vw, 32px);
+  overflow-wrap: anywhere;
+}
+.report-document h2 { font: clamp(25px, 4vw, 38px)/1.2 var(--display); }
+.report-document h3 { margin: 20px 0 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.report-document h4 { margin: 0 0 5px; }
+.report-eyebrow { color: var(--indigo); font-weight: 650; margin-bottom: 6px; }
+.report-meta { color: var(--slate); margin: 4px 0; }
+.report-warning { color: #794c10; font-weight: 650; }
+.report-document .notice { margin: 12px 0; }
+.finding-entry, .report-source { margin: 12px 0; }
+.finding-text { white-space: pre-wrap; }
+.report-cites { list-style: none; display: flex; flex-wrap: wrap; gap: 0 12px; margin: 4px 0; padding: 0; }
+.report-edit { margin-top: 6px; }
+.report-source code { display: block; }
+
+@media print {
+  body:has(#case-report-dialog[open]) > :not(#case-report-dialog) { display: none !important; }
+  #case-report-dialog[open] {
+    position: static;
+    display: block;
+    inset: auto;
+    overflow: visible;
+    width: auto;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    border: 0;
+    background: white;
+  }
+  #case-report-dialog::backdrop { display: none; }
+  #case-report-dialog .report-toolbar, #case-report-dialog .report-controls, .report-edit { display: none; }
+  #report-document { margin: 0; padding: 0; border: 0; }
+  .report-source { break-inside: avoid; }
+  #report-document h2, #report-document h3, #report-document h4 { break-after: avoid; }
+}
 .primary, .secondary, .original { min-height: 44px; border-radius: 6px; padding: 8px 14px; font-weight: 650; }
 .primary { background: var(--indigo); color: white; border: 1px solid var(--indigo); }
 .primary:hover { background: #323ca8; }

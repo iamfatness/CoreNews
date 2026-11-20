@@ -1,5 +1,7 @@
 import asyncio
+import csv
 import hashlib
+import io
 import os
 import tempfile
 import unittest
@@ -142,6 +144,8 @@ class ResearchEvidenceTests(unittest.TestCase):
         self.assertEqual(report["evidence"][0]["date_label"], "SDN snapshot published")
         self.assertEqual(report["evidence"][0]["source_date"], "2026-11-01")
         self.assertEqual(report["evidence"][0]["source_url"], ofac_catalog.SOURCE_URL)
+        self.assertEqual(report["evidence"][0]["source_snapshot_sha256"], old["id"])
+        self.assertEqual(report["evidence"][0]["source_entry_id"], "100")
         query["name"] = "Fixture alias"
         self.assertEqual(self.client.post(endpoint, headers=headers("first"), json=query).json()["records"], [])
         query["snapshot_id"] = "a" * 64
@@ -154,6 +158,28 @@ class ResearchEvidenceTests(unittest.TestCase):
             ofac_catalog.parse_snapshot(b"""
               <sdnList><publshInformation><Publish_Date>11/01/2026</Publish_Date>
               <Record_Count>9</Record_Count></publshInformation></sdnList>""")
+
+    def test_evidence_csv_preserves_citations_and_quotes_external_titles_as_text(self):
+        case = self.create("first")
+        fixture = [{**CERTIFICATES[0], "common_name": '＝Fixture, "quoted" label'}]
+        with patch.object(search.crtsh, "search_domain", AsyncMock(return_value=fixture)):
+            selection = self.search("first", "crtsh", "example.org").json()["records"][0]
+        saved = self.save("first", case, selection).json()
+        path = ROOT + f"/cases/{case}/evidence.csv"
+        self.assertEqual(self.client.get(path).status_code, 401)
+        self.assertEqual(self.client.get(path, headers=headers("second")).status_code, 404)
+        response = self.client.get(path, headers=headers("first"))
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+        self.assertIn("-evidence.csv", response.headers["Content-Disposition"])
+        self.assertIn("text/csv", response.headers["Content-Type"])
+        row, = csv.DictReader(io.StringIO(response.content.decode("utf-8-sig")))
+        self.assertEqual(row["label"], "E1")
+        self.assertEqual(row["title"], '[text] ＝Fixture, "quoted" label')
+        self.assertEqual(row["id"], saved["id"])
+        self.assertEqual(row["record_id"], selection["record"]["id"])
+        self.assertEqual(row["source_url"], selection["record"]["source_url"])
+        self.assertEqual(row["verification"], "not_captured")
 
     def test_earthquake_region_handles_dateline_and_saves_original_record(self):
         def feature(identifier, lat, lon, magnitude):

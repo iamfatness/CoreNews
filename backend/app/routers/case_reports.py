@@ -1,13 +1,18 @@
 """Workspace-scoped case findings and a portable report snapshot."""
 
+import csv
+import io
 import json
+import unicodedata
 from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import Response
 from pydantic import BaseModel, Field, StringConstraints, ValidationError, computed_field
 
 from .. import evidence_store as store
+from ..ofac_catalog import ScreeningCandidate
 from ..research_entities import observation_time
 from .research import CaseSummary, Workspace, record_json, require_case
 
@@ -45,6 +50,7 @@ class ReportEvidence(BaseModel):
     id: str
     label: str
     title: str
+    record_id: str
     source: str | None = None
     source_url: str | None = None
     source_date: str | None = None
@@ -54,6 +60,8 @@ class ReportEvidence(BaseModel):
     snapshot_sha256: str | None
     verification: Verification
     metadata_available: bool
+    source_snapshot_sha256: str | None = None
+    source_entry_id: str | None = None
 
 
 class CaseReport(BaseModel):
@@ -90,7 +98,7 @@ def checked_citations(data: FindingInput, workspace_id: str, case_id: str) -> li
 
 def report_source(row, number: int) -> ReportEvidence:
     common = {
-        "id": row["id"], "label": f"E{number}", "saved_at": row["saved_at"],
+        "id": row["id"], "label": f"E{number}", "record_id": row["record_id"], "saved_at": row["saved_at"],
         "snapshot_sha256": row["snapshot_sha256"], "verification": store.snapshot_state(row),
     }
     try:
@@ -101,8 +109,24 @@ def report_source(row, number: int) -> ReportEvidence:
     return ReportEvidence(
         **common, title=record.title, source=record.source, source_url=record.source_url,
         source_date=observed, date_label=label, collected_at=record.collected_at.isoformat(),
+        source_snapshot_sha256=record.snapshot_id if isinstance(record, ScreeningCandidate) else None,
+        source_entry_id=record.list_uid if isinstance(record, ScreeningCandidate) else None,
         metadata_available=True,
     )
+
+
+def report_evidence(workspace_id: str, case_id: str):
+    return (
+        report_source(row, number)
+        for number, row in enumerate(store.case_evidence(workspace_id, case_id), start=1)
+    )
+
+
+def spreadsheet_value(value):
+    if isinstance(value, str) and unicodedata.normalize("NFKC", value).lstrip().startswith(("=", "+", "-", "@")):
+        return "[text] " + value
+    return value
+
 
 
 @router.post("/{case_id}/findings", response_model=FindingDetail, status_code=201)
@@ -131,13 +155,27 @@ def read_report(case_id: UUID, workspace_id: Workspace):
     case = require_case(workspace_id, case_id)
     case_key = str(case_id)
     findings = [describe_finding(row) for row in store.case_finding_rows(workspace_id, case_key)]
-    evidence = [
-        report_source(row, number)
-        for number, row in enumerate(store.case_evidence(workspace_id, case_key), start=1)
-    ]
     return CaseReport(
-        case=CaseSummary(**case), exported_at=store.now(), findings=findings, evidence=evidence,
+        case=CaseSummary(**case), exported_at=store.now(), findings=findings,
+        evidence=list(report_evidence(workspace_id, case_key)),
         uncited_findings=sum(item.uncited for item in findings),
+    )
+
+
+@router.get("/{case_id}/evidence.csv", response_class=Response)
+def download_evidence(case_id: UUID, workspace_id: Workspace):
+    require_case(workspace_id, case_id)
+    output = io.StringIO(newline="")
+    writer = csv.DictWriter(output, fieldnames=list(ReportEvidence.model_fields), quoting=csv.QUOTE_ALL)
+    writer.writeheader()
+    for item in report_evidence(workspace_id, str(case_id)):
+        writer.writerow({key: spreadsheet_value(value) for key, value in item.model_dump().items()})
+    return Response(
+        "\ufeff" + output.getvalue(), media_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="corenews-case-{case_id}-evidence.csv"',
+            "Cache-Control": "no-store",
+        },
     )
 
 

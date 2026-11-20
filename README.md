@@ -114,11 +114,14 @@ and select evidence saved in that case. An uncited finding remains clearly
 marked in the report. If a finding changed since it was opened for editing,
 refresh the report and reopen the latest version before saving.
 
-**Download JSON** exports the case, findings, citation IDs, source links,
-timestamps, and snapshot integrity status. **Print or save PDF** opens the
-browser print dialog with only the report. Both formats work from saved case
-data, including when an upstream source is unavailable. A verified hash
-checks the saved metadata bytes, while the citation links back to the source.
+**Download JSON** exports the case, findings, and cited evidence. **Download
+evidence CSV** exports source references, timestamps, and integrity status
+for records saved to the case. Formula-like titles are prefixed with
+`[text]` in CSV for spreadsheet review. **Print or save PDF** opens the browser
+print dialog with the report. All three formats work from saved case data,
+including when an upstream source is unavailable. A verified metadata hash
+checks the saved bytes. OFAC citations also include the source snapshot hash
+and list entry ID.
 
 ### Case activity
 

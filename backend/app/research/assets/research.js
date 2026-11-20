@@ -82,13 +82,14 @@ function recordFields(record) {
   return [["Collected by CoreNews", showTime(record.collected_at)], ...sourceFields];
 }
 
-async function api(path, {method = "GET", body, signal, key = workspaceKey} = {}) {
+async function api(path, {method = "GET", body, signal, key = workspaceKey, download = false} = {}) {
   const headers = {};
   if (key) headers.Authorization = "Bearer " + key;
   if (body) headers["Content-Type"] = "application/json";
   const response = await fetch("../api/research" + path, {
     method, headers, body: body ? JSON.stringify(body) : undefined, signal, cache: "no-store",
   });
+  if (response.ok && download) return response.blob();
   const payload = await response.json();
   if (!response.ok) {
     const failure = new Error(typeof payload.detail === "string" ? payload.detail : "The request could not be completed.");

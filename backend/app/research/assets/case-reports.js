@@ -23,6 +23,15 @@ function sourceLink(value) {
   return null;
 }
 
+function downloadFile(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function buildReport(report, onEdit) {
   const fragment = document.createDocumentFragment();
   const sources = new Map(report.evidence.map(item => [item.id, item]));
@@ -87,6 +96,9 @@ function buildReport(report, onEdit) {
     );
     const original = sourceLink(item.source_url);
     if (original) entry.append(original);
+    if (item.source_snapshot_sha256) {
+      entry.append(node("p", "OFAC list entry " + item.source_entry_id + " · Snapshot SHA-256 " + item.source_snapshot_sha256, "report-meta"));
+    }
     const states = {
       verified: "Saved metadata hash verified",
       mismatch: "Saved metadata hash mismatch",
@@ -106,6 +118,7 @@ export function wireCaseReports(api, selectedCase) {
   const choices = byId("finding-citations");
   const preview = byId("report-document");
   const download = byId("report-json");
+  const evidenceCsv = byId("report-csv");
   const print = byId("report-print");
   const refresh = byId("report-refresh");
   const submit = byId("finding-save");
@@ -146,6 +159,7 @@ export function wireCaseReports(api, selectedCase) {
     preview.replaceChildren(buildReport(report, editingState));
     form.hidden = false;
     download.disabled = false;
+    evidenceCsv.disabled = false;
     print.disabled = false;
   }
 
@@ -175,6 +189,7 @@ export function wireCaseReports(api, selectedCase) {
     editingState(undefined);
     form.hidden = true;
     download.disabled = true;
+    evidenceCsv.disabled = true;
     print.disabled = true;
     submit.disabled = false;
     status("Loading case report.");
@@ -224,12 +239,21 @@ export function wireCaseReports(api, selectedCase) {
   download.addEventListener("click", () => {
     if (!report) return;
     const blob = new Blob([JSON.stringify(report, null, 2) + "\n"], {type:"application/json"});
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "corenews-case-" + report.case.id + ".json";
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    downloadFile(blob, "corenews-case-" + report.case.id + ".json");
+  });
+  evidenceCsv.addEventListener("click", async () => {
+    if (!report) return;
+    const generation = dialogGeneration;
+    const target = caseId;
+    evidenceCsv.disabled = true;
+    try {
+      const csv = await api("/cases/" + target + "/evidence.csv", {download:true});
+      if (generation === dialogGeneration) downloadFile(csv, "corenews-case-" + target + "-evidence.csv");
+    } catch (failure) {
+      if (generation === dialogGeneration) status(failure.message);
+    } finally {
+      if (generation === dialogGeneration) evidenceCsv.disabled = false;
+    }
   });
   print.addEventListener("click", () => window.print());
 }

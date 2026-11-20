@@ -108,7 +108,7 @@ select { max-width: 100%; }
 .report-meta { color: var(--slate); margin: 4px 0; }
 .report-warning { color: #794c10; font-weight: 650; }
 .report-document .notice { margin: 12px 0; }
-.finding-entry, .report-source { margin: 12px 0; }
+.finding-entry, .report-source { margin: 12px 0; overflow-wrap: anywhere; }
 .finding-text { white-space: pre-wrap; }
 .report-cites { list-style: none; display: flex; flex-wrap: wrap; gap: 0 12px; margin: 4px 0; padding: 0; }
 .report-edit { margin-top: 6px; }

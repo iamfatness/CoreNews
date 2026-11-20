@@ -1,9 +1,12 @@
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
+from . import evidence_store
 from .config import settings
 from .routers import case_reports, geo, monitoring, research, screening, search
 
@@ -45,3 +48,14 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/ready")
+def ready():
+    try:
+        with evidence_store.database(settings.database_url).connect() as conn:
+            for table in evidence_store.metadata.sorted_tables:
+                conn.execute(select(table).limit(0))
+    except SQLAlchemyError:
+        raise HTTPException(503, "Research storage is not ready.") from None
+    return {"status": "ready"}

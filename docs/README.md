@@ -6,6 +6,7 @@ CoreNews is a provenance-first, license-aware OSINT workbench. These pages are t
 | --- | --- |
 | [System specification](spec/SYSTEM_SPEC.md) | Vision and personas, functional requirements, architecture, connectors, data model, API outline, security, licensing, and non-functional requirements |
 | [Build roadmap](roadmap/ROADMAP.md) | Four phases with exit criteria, schedule, risks, open decisions, and the first two weeks |
+| [Review deployment](review-deployment.md) | Start the integrated app for controlled review and verify a release candidate |
 | [Platform specification](SPEC.md) | Earlier short sketch of the platform |
 | [Free sources inventory](SOURCES.md) | Keyless sources and free-tier accounts already noted for the project |
 

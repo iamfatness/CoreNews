@@ -6,7 +6,9 @@ Modular, self-hosted OSINT / intelligence platform focused on free public data s
 Aggregate free and free-tier public sources for entity research, threat intelligence, domain/IP recon, geopolitical monitoring, and situational awareness. Ethical use only. Respect rate limits and terms of service.
 
 ## Status
-**v0.1.0 skeleton** — FastAPI backend with modular connectors. First keyless connector (crt.sh) is live. Free-tier API keys collected by OpenIntel bot.
+**Integrated review build** with public-source search, case evidence and
+reports, in-app monitoring, earthquake mapping, and OFAC organization lookup.
+See [review deployment and verification](docs/review-deployment.md).
 
 ## Quick Links
 - [Documentation index](docs/README.md)

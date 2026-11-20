@@ -14,7 +14,7 @@ from sqlalchemy import create_engine, update
 from sqlalchemy.schema import CreateSchema, DropSchema
 
 from app.config import settings
-from app import watch_store, watch_worker
+from app import ofac_catalog, watch_store, watch_worker
 from app.connectors.edgar import EdgarConnector
 from app.connectors.gdelt import normalize_news
 from app.connectors.usgs import normalize_earthquakes
@@ -88,6 +88,60 @@ class ResearchEvidenceTests(unittest.TestCase):
         response = self.client.post(ROOT + "/cases", headers=headers(workspace), json={"title":title})
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()["id"]
+
+    def test_screening_versions_and_saves_exact_organization_candidates(self):
+        def snapshot(version, name):
+            return f"""<sdnList xmlns="https://example.org/fixture">
+              <publshInformation><Publish_Date>{version}</Publish_Date><Record_Count>2</Record_Count></publshInformation>
+              <sdnEntry><uid>100</uid><lastName>{name}</lastName><sdnType>Entity</sdnType>
+                <programList><program>FIXTURE-PROGRAM</program></programList>
+                <akaList><aka><lastName>Fixture alias</lastName></aka></akaList>
+              </sdnEntry>
+              <sdnEntry><uid>101</uid><lastName>{name}</lastName><sdnType>Individual</sdnType></sdnEntry>
+            </sdnList>""".encode()
+
+        endpoint = ROOT + "/screening/ofac"
+        query = {"name": " Example   Organization "}
+        self.assertEqual(self.client.post(endpoint, json=query).status_code, 401)
+        self.assertEqual(self.client.post(endpoint, headers=headers("first"), json=query).status_code, 503)
+        old_file = snapshot("11/01/2026", "Example Organization")
+        newest = ofac_catalog.import_snapshot(snapshot("11/02/2026", "New Organization"))
+        old = ofac_catalog.import_snapshot(old_file)
+        self.assertEqual(dict(ofac_catalog.import_snapshot(old_file)), dict(old))
+        self.assertEqual(old["id"], hashlib.sha256(old_file).hexdigest())
+        default = self.client.post(endpoint, headers=headers("first"), json=query).json()
+        self.assertEqual(default["snapshot"]["id"], newest["id"])
+        self.assertEqual(default["records"], [])
+        query["snapshot_id"] = old["id"]
+        result = self.client.post(endpoint, headers=headers("first"), json=query)
+        self.assertEqual(result.status_code, 200, result.text)
+        data = result.json()
+        self.assertEqual(data["scope"], "exact_organization_name")
+        self.assertEqual(data["snapshot"]["entity_count"], 1)
+        candidate, = data["records"]
+        self.assertEqual(candidate["record"]["list_uid"], "100")
+        self.assertEqual(candidate["record"]["programs"], ["FIXTURE-PROGRAM"])
+        own = self.create("first")
+        foreign = self.create("second")
+        self.assertEqual(self.save("second", foreign, candidate).status_code, 422)
+        saved = self.save("first", own, candidate)
+        self.assertEqual(saved.status_code, 200, saved.text)
+        report = self.client.get(ROOT + f"/cases/{own}/report", headers=headers("first")).json()
+        self.assertEqual(report["evidence"][0]["date_label"], "SDN snapshot published")
+        self.assertEqual(report["evidence"][0]["source_date"], "2026-11-01")
+        self.assertEqual(report["evidence"][0]["source_url"], ofac_catalog.SOURCE_URL)
+        query["name"] = "Fixture alias"
+        self.assertEqual(self.client.post(endpoint, headers=headers("first"), json=query).json()["records"], [])
+        query["snapshot_id"] = "a" * 64
+        self.assertEqual(self.client.post(endpoint, headers=headers("first"), json=query).status_code, 404)
+
+    def test_screening_rejects_untrusted_or_incomplete_snapshot_formats(self):
+        with self.assertRaisesRegex(ValueError, "declarations"):
+            ofac_catalog.parse_snapshot(b'<!DOCTYPE sdnList [<!ENTITY example "value">]><sdnList/>')
+        with self.assertRaisesRegex(ValueError, "record count"):
+            ofac_catalog.parse_snapshot(b"""
+              <sdnList><publshInformation><Publish_Date>11/01/2026</Publish_Date>
+              <Record_Count>9</Record_Count></publshInformation></sdnList>""")
 
     def test_earthquake_region_handles_dateline_and_saves_original_record(self):
         def feature(identifier, lat, lon, magnitude):

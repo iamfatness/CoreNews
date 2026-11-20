@@ -74,6 +74,7 @@
               <button class="secondary" id="open-case-watches" type="button" disabled>Watches and alerts</button>
               <button class="secondary" id="view-workspace" type="button">Browse workspace evidence</button>
               <button class="secondary" id="open-earthquake-map" type="button">Earthquake map</button>
+              <button class="secondary" id="open-ofac-screening" type="button">Organization screening</button>
               <button class="secondary" id="close-workspace" type="button">Close workspace</button>
             </div>
           </div>
@@ -100,6 +101,7 @@
             <option value="SEC EDGAR">SEC EDGAR</option>
             <option value="GDELT">GDELT</option>
             <option value="USGS Earthquakes">USGS Earthquakes</option>
+            <option value="OFAC SDN">OFAC SDN</option>
           </select>
         </div>
         <div id="results" aria-busy="false">
@@ -223,6 +225,28 @@
           <h3 id="earthquake-detail-title">Event details</h3><div id="earthquake-detail"></div>
         </section>
       </div>
+    </div>
+  </dialog>
+  <dialog id="ofac-dialog" class="case-dialog" aria-labelledby="ofac-title">
+    <header class="report-toolbar">
+      <h2 id="ofac-title">OFAC organization screening</h2>
+      <form method="dialog"><button class="secondary">Close screening</button></form>
+    </header>
+    <div class="report-controls">
+      <p>Check an organization's primary name against an imported OFAC SDN snapshot. Review each candidate's identity using the source.</p>
+      <form id="ofac-form">
+        <label for="ofac-name">Organization name</label>
+        <input id="ofac-name" maxlength="350" required>
+        <details>
+          <summary>Use a specific snapshot</summary>
+          <label for="ofac-snapshot">Snapshot SHA-256</label>
+          <input id="ofac-snapshot" maxlength="64" pattern="[a-f0-9]{64}" spellcheck="false" autocomplete="off">
+        </details>
+        <button class="primary" type="submit">Check name</button>
+      </form>
+      <p id="ofac-status" role="status"></p>
+      <p id="ofac-version" class="report-meta"></p>
+      <ul id="ofac-results"></ul>
     </div>
   </dialog>
 </body>

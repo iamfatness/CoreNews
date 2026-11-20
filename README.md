@@ -149,6 +149,28 @@ preserves the values seen when it was collected. If snapshot retention is
 approved on your deployment, add `USGS Earthquakes` to
 `RESEARCH_SNAPSHOT_SOURCES` to capture and verify its metadata hash.
 
+### OFAC organization screening
+
+Download the standard SDN.XML export from the
+[OFAC Sanctions List Service](https://ofac.treasury.gov/sanctions-list-service).
+From `backend/` with the deployment's `DATABASE_URL` configured, initialize
+the tables and import the downloaded file.
+
+```sh
+python -m app.evidence_store
+python -m app.ofac_catalog /path/to/SDN.XML
+```
+
+Preserve the original file with the displayed SHA-256 for audit. Reimporting
+identical bytes reuses that snapshot. Import new versions on your review schedule.
+Open **Organization screening** in the research workspace. It defaults to
+the most recent imported publication date and accepts a specific historical
+snapshot hash. The lookup covers normalized exact matches on organizations'
+primary names. Use the source entry to verify identity and consult the
+applicable lists when reviewing a candidate. A result or an empty lookup
+cannot establish sanctions status. A saved case record cites its snapshot
+date, hash, and OFAC list entry.
+
 ## Architecture Overview
 - Ingestion layer with modular connectors (`backend/app/connectors/`)
 - Storage: Postgres (OpenSearch planned)

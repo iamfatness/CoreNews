@@ -134,6 +134,15 @@ select { max-width: 100%; }
   .report-source { break-inside: avoid; }
   #report-document h2, #report-document h3, #report-document h4 { break-after: avoid; }
 }
+#ofac-form, #ofac-form details[open] { display: grid; gap: 8px; }
+#ofac-form { margin-block: 12px; }
+#ofac-form button { justify-self: start; }
+#ofac-form input { width: 100%; }
+#ofac-form summary { cursor: pointer; }
+#ofac-version, #ofac-results { overflow-wrap: anywhere; }
+#ofac-results { list-style: none; padding: 0; margin: 0; }
+#ofac-results li { border-top: 1px solid var(--line); padding-block: 12px; }
+#ofac-results p { margin-top: 4px; }
 .primary, .secondary, .original { min-height: 44px; border-radius: 6px; padding: 8px 14px; font-weight: 650; }
 .primary { background: var(--indigo); color: white; border: 1px solid var(--indigo); }
 .primary:hover { background: #323ca8; }

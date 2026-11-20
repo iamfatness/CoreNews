@@ -12,6 +12,12 @@ let lastSearch;
 let workspaceKey;
 let selected;
 let selectedButton;
+let listState;
+const discoverySources = {
+  crtsh: {name:"crt.sh", label:"Domain", example:"example.org"},
+  edgar: {name:"SEC EDGAR", label:"Ticker or SEC CIK", example:"AAPL or 0000320193"},
+  gdelt: {name:"GDELT", label:"News topic", example:"port strike"},
+};
 
 function setText(id, value) {
   byId(id).textContent = value;
@@ -29,9 +35,22 @@ function isFiling(record) {
   return record.record_type === "sec_filing";
 }
 
+function isNews(record) {
+  return record.record_type === "news_article";
+}
+
+function entityFor(record) {
+  if (isFiling(record)) return ["company", record.cik, record.company];
+  const domain = isNews(record) ? record.publisher_domain
+    : [...(record.names || []), record.title].find(name => /^[a-z0-9.-]+\.[a-z0-9-]+$/i.test(name));
+  return domain ? ["domain", domain, domain] : null;
+}
+
 function recordFields(record) {
   const sourceFields = isFiling(record)
     ? [["Filed", showTime(record.filed_on)], ["SEC CIK", record.cik], ["Accession", record.accession], ["Form", record.form]]
+    : isNews(record)
+    ? [["Seen by GDELT", showTime(record.seen_at)], ["Publisher domain", record.publisher_domain]]
     : [["Logged by source", showTime(record.logged_at)], ["Valid from", showTime(record.valid_from)],
        ["Valid until", showTime(record.valid_until)], ["Issuer", record.issuer || "Not provided"]];
   return [["Collected by CoreNews", showTime(record.collected_at)], ...sourceFields];
@@ -61,7 +80,7 @@ function openRecord(entry, button) {
   const {record} = entry;
   const filing = isFiling(record);
   setText("detail-title", record.title);
-  setText("record-kind", filing ? "Company filing" : "Certificate record");
+  setText("record-kind", filing ? "Company filing" : isNews(record) ? "News article" : "Certificate record");
   setText("attribution", record.source + " · " + record.id.split(":").at(-1));
   byId("original").href = record.source_url;
   setText("original", "View original record on " + record.source);
@@ -76,9 +95,11 @@ function openRecord(entry, button) {
   }));
   setText("record-shows", filing
     ? "EDGAR lists a submission under the identified filer and form."
+    : isNews(record) ? "GDELT indexed a link and headline from the publisher."
     : "The certificate log lists names on the certificate and the issuer when available.");
   setText("record-limits", filing
     ? "A filing records the filer’s disclosure. Check the document for the claim you want to cite."
+    : isNews(record) ? "The indexing time can differ from publication time. Check the publisher’s article for the original reporting."
     : "The log entry alone cannot establish who operates a domain or whether the certificate is currently in use.");
   const names = record.names || [];
   byId("names").hidden = !names.length;
@@ -90,6 +111,7 @@ function openRecord(entry, button) {
   byId("save-record").hidden = !entry.proof;
   byId("save-record").disabled = !casePicker.value;
   byId("verify-record").hidden = !entry.snapshot_sha256;
+  byId("entity-timeline").hidden = !workspaceKey || !entityFor(record);
   setText("record-status", entry.id
     ? (entry.snapshot_sha256 ? "Saved record with a verifiable metadata snapshot." : "Saved record metadata.")
     : (entry.proof && !casePicker.value ? "Create or select a case to save this record." : ""));
@@ -113,8 +135,11 @@ function resultRow(entry) {
   const title = document.createElement("strong");
   title.textContent = record.title;
   const summary = document.createElement("span");
-  summary.textContent = isFiling(record)
+  summary.textContent = entry.observed_at
+    ? entry.date_label + " " + showTime(entry.observed_at) + " · " + entry.case_title
+    : isFiling(record)
     ? "Filed " + (record.filed_on || "date unavailable")
+    : isNews(record) ? record.publisher_domain
     : record.issuer || "Issuer not provided";
   button.append(meta, title, summary);
   button.addEventListener("click", () => openRecord(entry, button));
@@ -132,37 +157,74 @@ function clearResults(heading) {
   selectedButton = undefined;
   byId("empty").hidden = true;
   byId("error").hidden = true;
+  byId("source-notice").hidden = true;
+  byId("filter-tools").hidden = true;
+  byId("filter-source").value = "";
+  listState = undefined;
   records.replaceChildren();
   setText("results-title", heading);
   setText("status", "");
 }
 
-function showEntries(entries, emptyMessage) {
-  records.replaceChildren(...entries.map(resultRow));
-  byId("empty").hidden = !!entries.length;
-  setText("empty", emptyMessage);
-  setText("status", entries.length + (entries.length === 1 ? " record" : " records"));
+function renderEntries() {
+  const {entries, emptyMessage, sourceCount} = listState;
+  const source = byId("filter-source").value;
+  const shown = source ? entries.filter(item => item.record.source === source) : entries;
+  records.replaceChildren(...shown.map(resultRow));
+  byId("empty").hidden = !!shown.length;
+  setText("empty", source ? "No records match this source filter." : emptyMessage);
+  const count = shown.length + (shown.length === 1 ? " record" : " records");
+  setText("status", !source && sourceCount > entries.length
+    ? count + " shown · " + sourceCount + " source rows" : count);
+}
+
+function showEntries(entries, emptyMessage, sourceCount = entries.length) {
+  listState = {entries, emptyMessage, sourceCount};
+  byId("filter-tools").hidden = entries.length === 0;
+  renderEntries();
+}
+
+function notices(lines) {
+  byId("source-notice").hidden = !lines.length;
+  setText("source-notice", lines.join("\n"));
 }
 
 async function search(value, source) {
-  const query = value.trim();
-  if (!query) return;
+  const compare = source === "compare";
+  const query = compare ? value : value.trim();
+  if (compare ? !Object.keys(query).length : !query) {
+    notices(["Enter at least one search."]);
+    return;
+  }
   clearResults("Search results");
   lastSearch = {query, source};
-  if (!workspaceKey && source === "edgar") {
-    setText("workspace-status", "Open a case workspace to search company filings.");
+  if (!workspaceKey && source !== "crtsh") {
+    setText("workspace-status", "Open a case workspace to use this search.");
     byId("workspace-key").focus();
     return;
   }
 
   const request = new AbortController();
   pending = request;
-  const params = new URLSearchParams({q: query, source});
+  const params = compare ? null : new URLSearchParams({q: query, source});
   byId("results").setAttribute("aria-busy", "true");
-  setText("status", source === "edgar" ? "Searching SEC EDGAR." : "Searching crt.sh.");
+  setText("status", compare ? "Searching selected sources." : "Searching " + discoverySources[source].name + ".");
   try {
     let payload;
-    if (workspaceKey) {
+    if (compare) {
+      const batches = await api("/discover", {method:"POST", body:{queries:query}, signal:request.signal});
+      if (request.signal.aborted) return;
+      const failed = batches.filter(batch => batch.error);
+      notices(failed.map(batch => discoverySources[batch.source_id].name + ": " + batch.error));
+      if (failed.length) {
+        byId("error").hidden = false;
+        byId("retry").hidden = false;
+        setText("error-message", "Rerun the comparison to retry unavailable sources.");
+      }
+      showEntries(batches.flatMap(batch => batch.records), "No matching records from the available sources.",
+        batches.reduce((count, batch) => count + (batch.total || 0), 0));
+      return;
+    } else if (workspaceKey) {
       payload = await api("/search?" + params, {signal: request.signal});
     } else {
       const response = await fetch("../search/records?" + new URLSearchParams({q:query}), {signal:request.signal});
@@ -175,10 +237,7 @@ async function search(value, source) {
       payload.records = payload.records.map(record => ({record}));
     }
     if (request.signal.aborted) return;
-    showEntries(payload.records, "The source returned no matching records.");
-    if (payload.records.length < payload.total) {
-      setText("status", payload.records.length + " records shown · " + payload.total + " source rows");
-    }
+    showEntries(payload.records, "The source returned no matching records.", payload.total);
   } catch (failure) {
     if (request.signal.aborted) return;
     setText("status", "");
@@ -201,6 +260,72 @@ function updateCases(cases, activeId) {
   byId("save-record").disabled = !casePicker.value;
 }
 
+async function loadCatalog() {
+  const catalog = byId("source-catalog");
+  try {
+    const sources = await api("/sources");
+    catalog.replaceChildren(...sources.map(source => {
+      const item = document.createElement("li");
+      const link = document.createElement("a");
+      link.href = source.website;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = source.name;
+      item.append(link, " · " + source.input_label + " · " + (source.enabled ? "Configured" : "Setup required"));
+      return item;
+    }));
+  } catch {
+    const item = document.createElement("li");
+    item.textContent = "Source catalog unavailable.";
+    catalog.replaceChildren(item);
+  }
+}
+
+async function browseEvidence(path, heading, emptyMessage) {
+  clearResults(heading);
+  byId("results-title").focus();
+  const request = new AbortController();
+  pending = request;
+  byId("results").setAttribute("aria-busy", "true");
+  setText("status", "Loading saved evidence.");
+  try {
+    const result = await api(path, {signal:request.signal});
+    if (request.signal.aborted) return;
+    const warnings = [];
+    if (result.limited) warnings.push("Showing only the most recent 500 saved records in this workspace.");
+    if (result.unreadable) warnings.push(result.unreadable + " saved records could not be read.");
+    notices(warnings);
+    showEntries(result.records.map(row => ({...row, caseId:row.case_id})), emptyMessage);
+  } catch (failure) {
+    if (!request.signal.aborted) {
+      notices([failure.message]);
+      setText("status", "");
+    }
+  } finally {
+    if (pending === request) {
+      pending = undefined;
+      byId("results").setAttribute("aria-busy", "false");
+    }
+  }
+}
+
+byId("view-workspace").addEventListener("click", () =>
+  browseEvidence("/evidence", "Workspace evidence", "No records have been saved in this workspace.")
+);
+byId("entity-timeline").addEventListener("click", () => {
+  const [kind, identifier, label] = entityFor(selected.record);
+  browseEvidence("/entities/" + kind + "/" + encodeURIComponent(identifier),
+    "Timeline · " + label, "No records for this identifier have been saved in this workspace.");
+});
+byId("filter-source").addEventListener("change", () => {
+  if (!listState) return;
+  main.classList.remove("inspecting");
+  detail.hidden = true;
+  selected = undefined;
+  selectedButton = undefined;
+  renderEntries();
+});
+
 byId("workspace-form").addEventListener("submit", async event => {
   event.preventDefault();
   const input = byId("workspace-key");
@@ -214,6 +339,7 @@ byId("workspace-form").addEventListener("submit", async event => {
     byId("case-controls").hidden = false;
     input.value = "";
     updateCases(cases);
+    loadCatalog();
     setText("workspace-status", "Workspace open. Searches can now be saved.");
     if (lastSearch) search(lastSearch.query, lastSearch.source);
   } catch (failure) {
@@ -294,8 +420,8 @@ byId("verify-record").addEventListener("click", async () => {
 byId("copy-citation").addEventListener("click", async () => {
   const {record} = selected;
   const parts = [record.title, record.source, record.id];
-  const date = record.filed_on || record.logged_at;
-  if (date) parts.push((isFiling(record) ? "Filed " : "Logged ") + showTime(date));
+  const date = record.filed_on || record.seen_at || record.logged_at;
+  if (date) parts.push((isFiling(record) ? "Filed " : isNews(record) ? "Seen by GDELT " : "Logged ") + showTime(date));
   parts.push("Collected " + showTime(record.collected_at), record.source_url);
   const citation = parts.join(" · ");
   try {
@@ -311,13 +437,24 @@ byId("copy-citation").addEventListener("click", async () => {
 });
 
 mode.addEventListener("change", () => {
-  const filing = mode.value === "edgar";
-  setText("query-label", filing ? "Ticker or SEC CIK" : "Domain");
-  queryInput.placeholder = filing ? "AAPL or 0000320193" : "example.org";
+  const compare = mode.value === "compare";
+  byId("comparison").hidden = !compare;
+  byId("single-query").hidden = compare;
+  queryInput.disabled = compare;
+  if (!compare) {
+    const source = discoverySources[mode.value];
+    setText("query-label", source.label);
+    queryInput.placeholder = source.example;
+  }
 });
 form.addEventListener("submit", event => {
   event.preventDefault();
-  search(queryInput.value, mode.value);
+  const value = mode.value === "compare"
+    ? Object.fromEntries(Object.keys(discoverySources)
+        .map(source => [source, byId("compare-" + source).value.trim()])
+        .filter(([, query]) => query))
+    : queryInput.value;
+  search(value, mode.value);
 });
 byId("retry").addEventListener("click", () => search(lastSearch.query, lastSearch.source));
 byId("back").addEventListener("click", () => {
@@ -325,8 +462,8 @@ byId("back").addEventListener("click", () => {
   selectedButton?.focus();
 });
 const params = new URLSearchParams(location.search);
-if (params.get("source") === "edgar") {
-  mode.value = "edgar";
+if (["edgar", "gdelt"].includes(params.get("source"))) {
+  mode.value = params.get("source");
   mode.dispatchEvent(new Event("change"));
 }
 if (params.get("q")) {

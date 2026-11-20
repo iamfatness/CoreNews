@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql://corenews:changeme@postgres:5432/corenews"
     redis_url: str = "redis://redis:6379/0"
     edgar_user_agent: str | None = None
+    gdelt_enabled: bool = False
     research_workspace_token_hashes: dict[str, str] = Field(default_factory=dict)
     research_signing_key: SecretStr | None = None
     research_snapshot_sources: set[str] = Field(default_factory=set)

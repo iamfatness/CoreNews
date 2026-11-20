@@ -57,6 +57,7 @@ environment, configure these server settings before starting the app:
 | Setting | Value |
 | --- | --- |
 | `EDGAR_USER_AGENT` | Your application or organization name and contact email. Follow the SEC's [EDGAR access guidance](https://www.sec.gov/search-filings/edgar-search-assistance/accessing-edgar-data). |
+| `GDELT_ENABLED` | Set to `true` after verifying upstream access and metadata policy on the deployment host. The default is disabled. |
 | `RESEARCH_WORKSPACE_TOKEN_HASHES` | JSON object mapping workspace names to unique, lowercase SHA-256 digests. Generate an independent random key for each workspace and give the raw key only to the appropriate tester. |
 | `RESEARCH_SIGNING_KEY` | An independent random server secret of at least 32 bytes. |
 | `RESEARCH_SNAPSHOT_SOURCES` | Optional JSON array of source labels whose normalized metadata may be kept as a verifiable snapshot. Use the labels `crt.sh` and `SEC EDGAR`. The default enables no snapshot hashes. |
@@ -79,6 +80,27 @@ for the initial EDGAR request limit. Production sign-in and a shared quota
 manager are separate follow-on work. Verification checks the saved normalized
 metadata against its SHA-256 digest. The source link provides access to the
 original publication.
+
+### Compare research sources and browse evidence
+
+Open a workspace and expand **Source catalog** to see configured sources and
+their supported inputs. Choose **Compare sources** and enter a domain, a
+company ticker or CIK, or a news topic in their respective fields. Failed
+sources are identified individually. Use **Filter by source** above the
+results to narrow the completed search. GDELT records contain the indexed
+headline, the publisher link, and the indexing time where supplied. Follow
+the publisher link for the article itself.
+
+**Browse workspace evidence** loads the most recent 500 saved records before
+filtering. **View entity timeline** groups that same window by exact domain
+or SEC CIK. Each item shows the case it came from and which recorded date is
+being displayed. A shared domain provides a navigation link between records
+and does not establish common ownership.
+
+The test suite uses SQLite by default. To exercise it against a dedicated test
+PostgreSQL server, set `CORENEWS_TEST_DATABASE_URL` and run
+`python -m unittest discover -s tests -v` from `backend/`. The evidence tests
+create and remove a unique schema per test.
 
 ## Architecture Overview
 - Ingestion layer with modular connectors (`backend/app/connectors/`)

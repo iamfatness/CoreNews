@@ -41,6 +41,12 @@ select { max-width: 100%; }
 .case-tools form { margin-top: 10px; }
 .case-tools label { display: block; margin-top: 7px; }
 .case-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+#start-search, .source-catalog { margin-top: 10px; }
+#comparison { border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px 12px; }
+#comparison input { width: min(100%, 28rem); padding: 8px 10px; border: 1px solid #8a95a5; border-radius: 6px; font: inherit; }
+#filter-tools { margin-bottom: 12px; }
+#filter-tools label { display: block; margin-bottom: 4px; font-size: 13px; }
+#source-notice { white-space: pre-line; }
 #record-status:not(:empty), #workspace-status:not(:empty) { margin-top: 8px; }
 #citation-text { width: 100%; margin-top: 8px; }
 .primary, .secondary, .original { min-height: 44px; border-radius: 6px; padding: 8px 14px; font-weight: 650; }

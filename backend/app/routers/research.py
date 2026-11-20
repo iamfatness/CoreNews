@@ -1,22 +1,33 @@
+import asyncio
 from typing import Annotated, Literal
 from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field, StringConstraints, TypeAdapter
+from pydantic import BaseModel, Field, StringConstraints, TypeAdapter, ValidationError
 
 from .. import evidence_store as store
 from ..config import settings
 from ..connectors.edgar import EdgarConnector, FilingRecord, UnknownFiler, normalize_filer
-from ..records import CertificateRecord
+from ..connectors.gdelt import GdeltConnector, NewsRecord, news_query
+from ..records import CertificateRecord, normalize_domain
+from ..research_entities import EntityKind, entity_matches, observation_time
 from ..workspace_access import issue_proof, valid_proof, workspace
 from .search import lookup_certificates
 
 router = APIRouter(prefix="/api/research", tags=["research"])
 edgar = EdgarConnector()
+gdelt = GdeltConnector()
 Workspace = Annotated[str, Depends(workspace)]
-Record = Annotated[CertificateRecord | FilingRecord, Field(discriminator="record_type")]
+Source = Literal["crtsh", "edgar", "gdelt"]
+Record = Annotated[CertificateRecord | FilingRecord | NewsRecord, Field(discriminator="record_type")]
 record_json = TypeAdapter(Record)
+SCAN_LIMIT = 500
+SOURCES = {
+    "crtsh": ("crt.sh", "Domain", "example.org", "https://crt.sh/"),
+    "edgar": ("SEC EDGAR", "Ticker or SEC CIK", "AAPL or 0000320193", "https://www.sec.gov/edgar/search/"),
+    "gdelt": ("GDELT", "News topic", "port strike", "https://www.gdeltproject.org/"),
+}
 
 
 class CaseInput(BaseModel):
@@ -50,6 +61,33 @@ class SearchEnvelope(BaseModel):
     source: str
     total: int
     records: list[RecordSelection]
+
+
+class DiscoveryInput(BaseModel):
+    queries: Annotated[
+        dict[Source, Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=253)]],
+        Field(min_length=1, max_length=3),
+    ]
+
+
+class DiscoverySource(BaseModel):
+    source_id: Source
+    total: int | None = None
+    error: str | None = None
+    records: list[RecordSelection] = Field(default_factory=list)
+
+
+class WorkspaceEvidence(CaseEvidence):
+    case_id: str
+    case_title: str
+    observed_at: str
+    date_label: str
+
+
+class EvidenceWindow(BaseModel):
+    records: list[WorkspaceEvidence]
+    limited: bool
+    unreadable: int
 
 
 def evidence_detail(row) -> CaseEvidence:
@@ -90,16 +128,104 @@ async def lookup_filings(query: str):
         raise HTTPException(502, "SEC EDGAR did not return usable filings. Try again.") from exc
 
 
-@router.get("/search", response_model=SearchEnvelope)
-async def search(
-    workspace_id: Workspace, source: Literal["crtsh", "edgar"],
-    q: Annotated[str, Query(min_length=1, max_length=253)],
-):
-    result = await (lookup_filings(q) if source == "edgar" else lookup_certificates(q))
+async def lookup_news(query: str):
+    if not settings.gdelt_enabled:
+        raise HTTPException(503, "GDELT is disabled on this instance.")
+    try:
+        query = news_query(query)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    try:
+        return await gdelt.search(query)
+    except httpx.TimeoutException as exc:
+        raise HTTPException(504, "GDELT timed out. Try again.") from exc
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 429:
+            raise HTTPException(503, "GDELT is limiting requests. Try again in a moment.") from exc
+        raise HTTPException(502, "GDELT is temporarily unavailable.") from exc
+    except (httpx.RequestError, ValueError) as exc:
+        raise HTTPException(502, "GDELT did not return usable results.") from exc
+
+
+async def source_search(workspace_id: str, source: Source, query: str) -> SearchEnvelope:
+    fetch = {"crtsh": lookup_certificates, "edgar": lookup_filings, "gdelt": lookup_news}[source]
+    result = await fetch(query)
     return SearchEnvelope(
         query=result.query, source=result.source, total=result.total,
         records=[RecordSelection(record=row, proof=issue_proof(workspace_id, row)) for row in result.records],
     )
+
+
+@router.get("/search", response_model=SearchEnvelope)
+async def search(
+    workspace_id: Workspace, source: Source,
+    q: Annotated[str, Query(min_length=1, max_length=253)],
+):
+    return await source_search(workspace_id, source, q)
+
+
+@router.get("/sources")
+def list_sources(workspace_id: Workspace):
+    enabled = {"crtsh": True, "edgar": bool(settings.edgar_user_agent), "gdelt": settings.gdelt_enabled}
+    return [
+        {"id": key, "name": name, "input_label": label, "example": example,
+         "website": website, "enabled": enabled[key]}
+        for key, (name, label, example, website) in SOURCES.items()
+    ]
+
+
+@router.post("/discover", response_model=list[DiscoverySource])
+async def discover(data: DiscoveryInput, workspace_id: Workspace):
+    async def one(source: Source, query: str):
+        try:
+            result = await source_search(workspace_id, source, query)
+            return DiscoverySource(source_id=source, total=result.total, records=result.records)
+        except HTTPException as exc:
+            return DiscoverySource(source_id=source, error=str(exc.detail))
+
+    return await asyncio.gather(*(one(source, q) for source, q in data.queries.items()))
+
+
+def scan_evidence(workspace_id: str) -> EvidenceWindow:
+    rows = store.recent_evidence(workspace_id, SCAN_LIMIT + 1)
+    matched = []
+    unreadable = 0
+    for row in rows[:SCAN_LIMIT]:
+        try:
+            item = evidence_detail(row)
+        except ValidationError:
+            unreadable += 1
+            continue
+        observed, label = observation_time(item.record)
+        matched.append(WorkspaceEvidence(
+            **item.model_dump(), case_id=row["case_id"], case_title=row["case_title"],
+            observed_at=observed, date_label=label,
+        ))
+    return EvidenceWindow(records=matched, limited=len(rows) > SCAN_LIMIT, unreadable=unreadable)
+
+
+@router.get("/evidence", response_model=EvidenceWindow)
+def workspace_evidence(workspace_id: Workspace, source: Source | None = None):
+    result = scan_evidence(workspace_id)
+    if source is not None:
+        result.records = [item for item in result.records if item.record.source == SOURCES[source][0]]
+    return result
+
+
+@router.get("/entities/{kind}/{key}", response_model=EvidenceWindow)
+def entity_timeline(kind: EntityKind, key: str, workspace_id: Workspace):
+    try:
+        canonical = normalize_domain(key) if kind == "domain" else normalize_filer(key)
+        if kind == "company" and not canonical.isdigit():
+            raise ValueError("Company timelines require an SEC CIK.")
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    result = scan_evidence(workspace_id)
+    result.records = sorted(
+        (item for item in result.records if entity_matches(item.record, kind, canonical)),
+        key=lambda item: (item.observed_at[:10], item.saved_at, item.id), reverse=True,
+    )
+    return result
 
 
 @router.get("/cases", response_model=list[CaseSummary])

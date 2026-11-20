@@ -2,6 +2,7 @@ import { wireCaseReports } from "./case-reports.js";
 import { wireCaseWatches } from "./case-watches.js";
 import { wireEarthquakeMap } from "./earthquake-map.js";
 import { wireOfacScreening } from "./ofac-screening.js";
+import { wireCaseActivity } from "./case-activity.js";
 
 const byId = id => document.getElementById(id);
 const form = byId("search-form");
@@ -16,6 +17,7 @@ wireCaseReports(api, () => casePicker.value);
 wireCaseWatches(api, () => casePicker.value);
 wireEarthquakeMap(api, () => casePicker.value);
 wireOfacScreening(api, () => casePicker.value);
+wireCaseActivity(api, () => casePicker.value, showTime);
 let pending;
 let lastSearch;
 let workspaceKey;
@@ -290,6 +292,7 @@ function updateCases(cases, activeId) {
   casePicker.value = activeId || "";
   byId("view-case").disabled = !casePicker.value;
   byId("open-case-report").disabled = !casePicker.value;
+  byId("open-case-activity").disabled = !casePicker.value;
   byId("open-case-watches").disabled = !casePicker.value;
   byId("save-record").disabled = !casePicker.value;
 }
@@ -405,6 +408,7 @@ byId("new-case").addEventListener("submit", async event => {
 casePicker.addEventListener("change", () => {
   byId("view-case").disabled = !casePicker.value;
   byId("open-case-report").disabled = !casePicker.value;
+  byId("open-case-activity").disabled = !casePicker.value;
   byId("open-case-watches").disabled = !casePicker.value;
   byId("save-record").disabled = !casePicker.value;
   if (byId("results-title").textContent === "Saved evidence") {

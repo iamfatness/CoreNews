@@ -402,3 +402,39 @@ class ResearchEvidenceTests(unittest.TestCase):
         self.assertEqual(stale.status_code, 409)
         report = self.client.get(owner_path + "/report", headers=headers("first")).json()
         self.assertEqual(report["findings"][0]["body"], "Corrected note")
+
+    def test_case_activity_paginates_only_committed_changes_in_the_case(self):
+        owner = self.create("first")
+        same_workspace = self.create("first")
+        case_path = ROOT + f"/cases/{owner}"
+        activity_path = case_path + "/activity"
+        auth = headers("first")
+        self.assertEqual(self.client.get(activity_path).status_code, 401)
+        self.assertEqual(self.client.get(activity_path, headers=headers("second")).status_code, 404)
+        with patch.object(search.crtsh, "search_domain", AsyncMock(return_value=CERTIFICATES)):
+            selection = self.search("first", "crtsh", "example.org").json()["records"][0]
+        saved = self.save("first", owner, selection)
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertEqual(self.save("first", owner, selection).json()["id"], saved.json()["id"])
+        body = {"kind": "finding", "body": "Case note", "evidence_ids": [saved.json()["id"]]}
+        new = self.client.post(case_path + "/findings", headers=auth, json=body)
+        self.assertEqual(new.status_code, 201, new.text)
+        edit_path = case_path + "/findings/" + new.json()["id"]
+        revision = {**body, "version": 1, "body": "Corrected note"}
+        self.assertEqual(self.client.put(edit_path, headers=auth, json=revision).status_code, 200)
+        self.assertEqual(self.client.put(edit_path, headers=auth, json=revision).status_code, 409)
+        first = self.client.get(activity_path, headers=auth, params={"limit": 2})
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertEqual(first.headers["Cache-Control"], "no-store")
+        page = first.json()
+        self.assertEqual([event["action"] for event in page["events"]], ["finding_edited", "finding_added"])
+        self.assertEqual([event["version"] for event in page["events"]], [2, 1])
+        self.assertEqual(page["events"][0]["target_id"], new.json()["id"])
+        cursor = {"before": page["next_before"]}
+        older = self.client.get(activity_path, headers=auth, params=cursor).json()
+        self.assertEqual([event["action"] for event in older["events"]], ["evidence_saved", "case_created"])
+        self.assertEqual(older["events"][0]["target_id"], saved.json()["id"])
+        self.assertIsNone(older["next_before"])
+        other_path = ROOT + f"/cases/{same_workspace}/activity"
+        self.assertEqual(self.client.get(other_path, headers=auth, params=cursor).json()["events"], [])
+        self.assertEqual(self.client.get(activity_path, headers=auth, params={"limit": 101}).status_code, 422)

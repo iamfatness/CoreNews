@@ -71,6 +71,7 @@
               <select id="active-case"></select>
               <button class="secondary" id="view-case" type="button" disabled>View saved evidence</button>
               <button class="secondary" id="open-case-report" type="button" disabled>Findings and report</button>
+              <button class="secondary" id="open-case-activity" type="button" disabled>Case activity</button>
               <button class="secondary" id="open-case-watches" type="button" disabled>Watches and alerts</button>
               <button class="secondary" id="view-workspace" type="button">Browse workspace evidence</button>
               <button class="secondary" id="open-earthquake-map" type="button">Earthquake map</button>
@@ -247,6 +248,18 @@
       <p id="ofac-status" role="status"></p>
       <p id="ofac-version" class="report-meta"></p>
       <ul id="ofac-results"></ul>
+    </div>
+  </dialog>
+  <dialog id="activity-dialog" class="case-dialog" aria-labelledby="activity-title">
+    <header class="report-toolbar">
+      <h2 id="activity-title">Case activity</h2>
+      <form method="dialog"><button class="secondary">Close activity</button></form>
+    </header>
+    <div class="report-controls">
+      <p>Activity is recorded at the workspace level for case creation, evidence saves, and changes to report entries.</p>
+      <p id="activity-status" role="status"></p>
+      <ol id="activity-events"></ol>
+      <button id="activity-older" class="secondary" type="button" hidden>Load older activity</button>
     </div>
   </dialog>
 </body>

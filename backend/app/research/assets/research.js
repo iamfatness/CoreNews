@@ -1,60 +1,107 @@
-const form = document.getElementById("search-form");
-const domainInput = document.getElementById("domain");
+const byId = id => document.getElementById(id);
+const form = byId("search-form");
+const queryInput = byId("domain");
+const mode = byId("source-mode");
 const main = document.querySelector("main");
-const narrowLayout = matchMedia("(max-width: 780px)");
-const results = document.getElementById("results");
-const records = document.getElementById("records");
-const status = document.getElementById("status");
-const empty = document.getElementById("empty");
-const error = document.getElementById("error");
-const errorMessage = document.getElementById("error-message");
-const retry = document.getElementById("retry");
-const detail = document.getElementById("detail");
-const title = document.getElementById("detail-title");
-const original = document.getElementById("original");
+const narrow = matchMedia("(max-width: 780px)");
+const records = byId("records");
+const detail = byId("detail");
+const casePicker = byId("active-case");
 let pending;
-let lastQuery;
+let lastSearch;
+let workspaceKey;
+let selected;
 let selectedButton;
 
 function setText(id, value) {
-  document.getElementById(id).textContent = value;
+  byId(id).textContent = value;
 }
 
 function showTime(value) {
   if (!value) return "Not provided";
-  if (value.endsWith("Z") || value.endsWith("+00:00")) {
-    return value.replace("T", " ").replace(/(?:Z|\+00:00)$/, " UTC");
-  }
+  if (!value.includes("T")) return value;
   const display = value.replace("T", " ");
+  if (/(Z|\+00:00)$/.test(value)) return display.replace(/(?:Z|\+00:00)$/, " UTC");
   return /[+-]\d{2}:\d{2}$/.test(value) ? display : display + " (time zone not provided)";
 }
 
-function openRecord(record, button) {
+function isFiling(record) {
+  return record.record_type === "sec_filing";
+}
+
+function recordFields(record) {
+  const sourceFields = isFiling(record)
+    ? [["Filed", showTime(record.filed_on)], ["SEC CIK", record.cik], ["Accession", record.accession], ["Form", record.form]]
+    : [["Logged by source", showTime(record.logged_at)], ["Valid from", showTime(record.valid_from)],
+       ["Valid until", showTime(record.valid_until)], ["Issuer", record.issuer || "Not provided"]];
+  return [["Collected by CoreNews", showTime(record.collected_at)], ...sourceFields];
+}
+
+async function api(path, {method = "GET", body, signal, key = workspaceKey} = {}) {
+  const headers = {};
+  if (key) headers.Authorization = "Bearer " + key;
+  if (body) headers["Content-Type"] = "application/json";
+  const response = await fetch("../api/research" + path, {
+    method, headers, body: body ? JSON.stringify(body) : undefined, signal, cache: "no-store",
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    const failure = new Error(typeof payload.detail === "string" ? payload.detail : "The request could not be completed.");
+    failure.status = response.status;
+    throw failure;
+  }
+  return payload;
+}
+
+function openRecord(entry, button) {
   selectedButton?.setAttribute("aria-pressed", "false");
+  selected = entry;
   selectedButton = button;
   button.setAttribute("aria-pressed", "true");
-  title.textContent = record.title;
-  setText("attribution", record.source + " · Certificate Transparency");
-  setText("logged", showTime(record.logged_at));
-  setText("collected", showTime(record.collected_at));
-  setText("valid-from", showTime(record.valid_from));
-  setText("valid-until", showTime(record.valid_until));
-  setText("issuer", record.issuer || "Not provided");
-  const names = document.getElementById("names");
-  names.hidden = !record.names.length;
-  names.replaceChildren(...record.names.map(name => {
+  const {record} = entry;
+  const filing = isFiling(record);
+  setText("detail-title", record.title);
+  setText("record-kind", filing ? "Company filing" : "Certificate record");
+  setText("attribution", record.source + " · " + record.id.split(":").at(-1));
+  byId("original").href = record.source_url;
+  setText("original", "View original record on " + record.source);
+  byId("provenance").replaceChildren(...recordFields(record).map(([label, value]) => {
+    const group = document.createElement("div");
+    const dt = document.createElement("dt");
+    const dd = document.createElement("dd");
+    dt.textContent = label;
+    dd.textContent = value;
+    group.append(dt, dd);
+    return group;
+  }));
+  setText("record-shows", filing
+    ? "EDGAR lists a submission under the identified filer and form."
+    : "The certificate log lists names on the certificate and the issuer when available.");
+  setText("record-limits", filing
+    ? "A filing records the filer’s disclosure. Check the document for the claim you want to cite."
+    : "The log entry alone cannot establish who operates a domain or whether the certificate is currently in use.");
+  const names = record.names || [];
+  byId("names").hidden = !names.length;
+  byId("names").replaceChildren(...names.map(name => {
     const item = document.createElement("li");
     item.textContent = name;
     return item;
   }));
-  original.href = record.source_url;
+  byId("save-record").hidden = !entry.proof;
+  byId("save-record").disabled = !casePicker.value;
+  byId("verify-record").hidden = !entry.snapshot_sha256;
+  setText("record-status", entry.id
+    ? (entry.snapshot_sha256 ? "Saved record with a verifiable metadata snapshot." : "Saved record metadata.")
+    : (entry.proof && !casePicker.value ? "Create or select a case to save this record." : ""));
+  byId("citation-text").hidden = true;
   detail.hidden = false;
   detail.scrollTop = 0;
   main.classList.add("inspecting");
-  title.focus({preventScroll: !narrowLayout.matches});
+  byId("detail-title").focus({preventScroll: !narrow.matches});
 }
 
-function resultRow(record) {
+function resultRow(entry) {
+  const {record} = entry;
   const item = document.createElement("li");
   const button = document.createElement("button");
   button.type = "button";
@@ -62,97 +109,227 @@ function resultRow(record) {
   button.setAttribute("aria-pressed", "false");
   const meta = document.createElement("span");
   meta.className = "meta";
-  meta.textContent = record.source + " · Certificate " + record.id.split(":").at(-1);
-  const label = document.createElement("strong");
-  label.textContent = record.title;
-  const issuer = document.createElement("span");
-  issuer.textContent = record.issuer || "Issuer not provided";
-  button.append(meta, label, issuer);
-  button.addEventListener("click", () => openRecord(record, button));
+  meta.textContent = record.source + " · " + record.id.split(":").at(-1);
+  const title = document.createElement("strong");
+  title.textContent = record.title;
+  const summary = document.createElement("span");
+  summary.textContent = isFiling(record)
+    ? "Filed " + (record.filed_on || "date unavailable")
+    : record.issuer || "Issuer not provided";
+  button.append(meta, title, summary);
+  button.addEventListener("click", () => openRecord(entry, button));
   item.append(button);
   return item;
 }
 
-function rememberQuery(value) {
-  const url = new URL(location.href);
-  url.searchParams.set("q", value);
-  history.replaceState(null, "", url);
-}
-
-async function search(value) {
-  const domain = value.trim();
-  if (!domain) {
-    domainInput.focus();
-    return;
-  }
+function clearResults(heading) {
   pending?.abort();
-  const request = new AbortController();
-  pending = request;
-  lastQuery = domain;
-  rememberQuery(domain);
+  pending = undefined;
+  byId("results").setAttribute("aria-busy", "false");
   main.classList.remove("inspecting");
   detail.hidden = true;
+  selected = undefined;
   selectedButton = undefined;
-  empty.hidden = true;
-  error.hidden = true;
-  retry.hidden = true;
+  byId("empty").hidden = true;
+  byId("error").hidden = true;
   records.replaceChildren();
-  results.setAttribute("aria-busy", "true");
-  status.textContent = "Searching crt.sh…";
+  setText("results-title", heading);
+  setText("status", "");
+}
 
-  const endpoint = new URL("../search/records", location.href);
-  endpoint.searchParams.set("q", domain);
+function showEntries(entries, emptyMessage) {
+  records.replaceChildren(...entries.map(resultRow));
+  byId("empty").hidden = !!entries.length;
+  setText("empty", emptyMessage);
+  setText("status", entries.length + (entries.length === 1 ? " record" : " records"));
+}
+
+async function search(value, source) {
+  const query = value.trim();
+  if (!query) return;
+  clearResults("Search results");
+  lastSearch = {query, source};
+  if (!workspaceKey && source === "edgar") {
+    setText("workspace-status", "Open a case workspace to search company filings.");
+    byId("workspace-key").focus();
+    return;
+  }
+
+  const request = new AbortController();
+  pending = request;
+  const params = new URLSearchParams({q: query, source});
+  byId("results").setAttribute("aria-busy", "true");
+  setText("status", source === "edgar" ? "Searching SEC EDGAR." : "Searching crt.sh.");
   try {
-    const response = await fetch(endpoint, {signal: request.signal});
-    const payload = await response.json();
-    if (request.signal.aborted) return;
-    if (!response.ok) {
-      errorMessage.textContent = typeof payload.detail === "string" && response.status >= 422
-        ? payload.detail : "The search could not be completed.";
-      retry.hidden = response.status < 500;
-      error.hidden = false;
-      status.textContent = "";
-      if (response.status === 422) domainInput.focus();
-      return;
+    let payload;
+    if (workspaceKey) {
+      payload = await api("/search?" + params, {signal: request.signal});
+    } else {
+      const response = await fetch("../search/records?" + new URLSearchParams({q:query}), {signal:request.signal});
+      payload = await response.json();
+      if (!response.ok) {
+        const failure = new Error(typeof payload.detail === "string" ? payload.detail : "The search could not be completed.");
+        failure.status = response.status;
+        throw failure;
+      }
+      payload.records = payload.records.map(record => ({record}));
     }
-
-    const count = payload.records.length;
-    records.replaceChildren(...payload.records.map(resultRow));
-    if (count === 0) {
-      empty.textContent = "crt.sh returned no certificate records for " + payload.query + ".";
-      empty.hidden = false;
-    }
-    status.textContent = count < payload.total
-      ? count + " records shown · " + payload.total + " source rows"
-      : count + (count === 1 ? " record" : " records");
-  } catch {
     if (request.signal.aborted) return;
-    status.textContent = "";
-    errorMessage.textContent = "Could not complete the search. Check your connection and try again.";
-    retry.hidden = false;
-    error.hidden = false;
+    showEntries(payload.records, "The source returned no matching records.");
+    if (payload.records.length < payload.total) {
+      setText("status", payload.records.length + " records shown · " + payload.total + " source rows");
+    }
+  } catch (failure) {
+    if (request.signal.aborted) return;
+    setText("status", "");
+    setText("error-message", failure.message);
+    byId("error").hidden = false;
+    byId("retry").hidden = !!failure.status && failure.status < 500;
   } finally {
     if (pending === request) {
-      results.setAttribute("aria-busy", "false");
       pending = undefined;
+      byId("results").setAttribute("aria-busy", "false");
     }
   }
 }
 
+function updateCases(cases, activeId) {
+  casePicker.replaceChildren(new Option("Select a case", ""));
+  for (const item of cases) casePicker.add(new Option(item.title, item.id));
+  casePicker.value = activeId || "";
+  byId("view-case").disabled = !casePicker.value;
+  byId("save-record").disabled = !casePicker.value;
+}
+
+byId("workspace-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const input = byId("workspace-key");
+  const key = input.value;
+  const button = event.submitter;
+  button.disabled = true;
+  try {
+    const cases = await api("/cases", {key});
+    workspaceKey = key;
+    byId("workspace-form").hidden = true;
+    byId("case-controls").hidden = false;
+    input.value = "";
+    updateCases(cases);
+    setText("workspace-status", "Workspace open. Searches can now be saved.");
+    if (lastSearch) search(lastSearch.query, lastSearch.source);
+  } catch (failure) {
+    setText("workspace-status", failure.message);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+byId("close-workspace").addEventListener("click", () => location.reload());
+byId("new-case").addEventListener("submit", async event => {
+  event.preventDefault();
+  const input = byId("case-title");
+  const button = event.submitter;
+  button.disabled = true;
+  try {
+    const created = await api("/cases", {method:"POST", body:{title:input.value}});
+    casePicker.add(new Option(created.title, created.id));
+    casePicker.value = created.id;
+    casePicker.dispatchEvent(new Event("change"));
+    input.value = "";
+    setText("workspace-status", "Case created.");
+  } catch (failure) {
+    setText("workspace-status", failure.message);
+  } finally {
+    button.disabled = false;
+  }
+});
+casePicker.addEventListener("change", () => {
+  byId("view-case").disabled = !casePicker.value;
+  byId("save-record").disabled = !casePicker.value;
+  if (byId("results-title").textContent === "Saved evidence") {
+    clearResults("Saved evidence");
+    showEntries([], "Open the selected case to see its evidence.");
+  }
+});
+byId("view-case").addEventListener("click", async () => {
+  const caseId = casePicker.value;
+  clearResults("Saved evidence");
+  const request = new AbortController();
+  pending = request;
+  try {
+    const current = await api("/cases/" + caseId, {signal:request.signal});
+    if (request.signal.aborted || caseId !== casePicker.value) return;
+    showEntries(current.evidence.map(entry => ({...entry, caseId})), "No evidence has been saved in this case.");
+  } catch (failure) {
+    if (!request.signal.aborted) setText("workspace-status", failure.message);
+  } finally {
+    if (pending === request) pending = undefined;
+  }
+});
+byId("save-record").addEventListener("click", async event => {
+  const entry = selected;
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    await api("/cases/" + casePicker.value + "/evidence", {
+      method:"PUT", body:{record:entry.record, proof:entry.proof},
+    });
+    if (entry === selected) setText("record-status", "Saved. Open the case to view the evidence.");
+  } catch (failure) {
+    if (entry === selected) setText("record-status", failure.message);
+  } finally {
+    button.disabled = !casePicker.value;
+  }
+});
+byId("verify-record").addEventListener("click", async () => {
+  const entry = selected;
+  try {
+    const result = await api("/cases/" + entry.caseId + "/evidence/" + entry.id + "/verify");
+    if (entry === selected) setText("record-status", result.status === "verified"
+      ? "Snapshot verified · SHA-256 " + result.sha256
+      : "Snapshot verification status: " + result.status.replaceAll("_", " "));
+  } catch (failure) {
+    if (entry === selected) setText("record-status", failure.message);
+  }
+});
+byId("copy-citation").addEventListener("click", async () => {
+  const {record} = selected;
+  const parts = [record.title, record.source, record.id];
+  const date = record.filed_on || record.logged_at;
+  if (date) parts.push((isFiling(record) ? "Filed " : "Logged ") + showTime(date));
+  parts.push("Collected " + showTime(record.collected_at), record.source_url);
+  const citation = parts.join(" · ");
+  try {
+    await navigator.clipboard.writeText(citation);
+    setText("record-status", "Citation copied.");
+  } catch {
+    const field = byId("citation-text");
+    field.value = citation;
+    field.hidden = false;
+    field.select();
+    setText("record-status", "Copy the citation from the text field.");
+  }
+});
+
+mode.addEventListener("change", () => {
+  const filing = mode.value === "edgar";
+  setText("query-label", filing ? "Ticker or SEC CIK" : "Domain");
+  queryInput.placeholder = filing ? "AAPL or 0000320193" : "example.org";
+});
 form.addEventListener("submit", event => {
   event.preventDefault();
-  search(domainInput.value);
+  search(queryInput.value, mode.value);
 });
-retry.addEventListener("click", () => {
-  domainInput.focus();
-  search(lastQuery);
-});
-document.getElementById("back").addEventListener("click", () => {
+byId("retry").addEventListener("click", () => search(lastSearch.query, lastSearch.source));
+byId("back").addEventListener("click", () => {
   main.classList.remove("inspecting");
   selectedButton?.focus();
 });
-const initial = new URLSearchParams(location.search).get("q");
-if (initial) {
-  domainInput.value = initial;
-  search(initial);
+const params = new URLSearchParams(location.search);
+if (params.get("source") === "edgar") {
+  mode.value = "edgar";
+  mode.dispatchEvent(new Event("change"));
+}
+if (params.get("q")) {
+  queryInput.value = params.get("q");
+  search(queryInput.value, mode.value);
 }

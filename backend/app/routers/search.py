@@ -17,6 +17,10 @@ async def search_crtsh(q: str = Query(..., description="Domain or query to searc
 @router.get("/records", response_model=CertificateSearchResults)
 async def search_records(q: str = Query(..., max_length=512)):
     """Look up a domain and return normalized public certificate records."""
+    return await lookup_certificates(q)
+
+
+async def lookup_certificates(q: str) -> CertificateSearchResults:
     try:
         domain = normalize_domain(q)
     except ValueError as exc:

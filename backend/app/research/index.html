@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Research · CoreNews</title>
+  <link rel="stylesheet" href="./assets/research.css">
+  <script src="./assets/research.js" defer></script>
+</head>
+<body>
+  <header>
+    <div class="wrap masthead">
+      <img src="./assets/corenews.svg" alt="CoreNews" width="136" height="26">
+      <span>Follow the evidence.</span>
+    </div>
+  </header>
+  <main>
+    <section class="search-section" aria-labelledby="research-title">
+      <div class="wrap">
+        <h1 id="research-title">Research</h1>
+        <p>Search public certificate records for a domain.</p>
+        <form id="search-form" action="./" method="get">
+          <label for="domain">Domain</label>
+          <div class="search-controls">
+            <input id="domain" name="q" type="search" required maxlength="253"
+              placeholder="example.org" spellcheck="false" autocapitalize="none" autocomplete="off">
+            <button class="primary" type="submit">Search</button>
+          </div>
+        </form>
+        <p class="source">Source <span>crt.sh · Certificate Transparency</span></p>
+      </div>
+    </section>
+    <div class="wrap workspace">
+      <section class="listing" aria-labelledby="results-title">
+        <div class="results-header">
+          <h2 id="results-title">Search results</h2>
+          <p id="status" role="status"></p>
+        </div>
+        <div id="error" class="notice" hidden>
+          <p id="error-message" role="alert"></p>
+          <button id="retry" class="secondary" type="button" hidden>Retry search</button>
+        </div>
+        <div id="results" aria-busy="false">
+          <p id="empty" class="empty">Enter a domain to look up its certificate records.</p>
+          <ul id="records"></ul>
+        </div>
+      </section>
+      <aside id="detail" aria-labelledby="detail-title" hidden>
+        <div class="detail-header">
+          <span>Certificate record</span>
+          <button id="back" class="secondary" type="button">Back to results</button>
+        </div>
+        <h2 id="detail-title" tabindex="-1"></h2>
+        <p id="attribution"></p>
+        <a id="original" class="original" target="_blank" rel="noopener noreferrer">View original record on crt.sh ↗</a>
+        <dl>
+          <div><dt>Logged by source</dt><dd id="logged"></dd></div>
+          <div><dt>Collected by CoreNews</dt><dd id="collected"></dd></div>
+          <div><dt>Valid from</dt><dd id="valid-from"></dd></div>
+          <div><dt>Valid until</dt><dd id="valid-until"></dd></div>
+          <div class="wide"><dt>Issuer</dt><dd id="issuer"></dd></div>
+        </dl>
+        <h3>What this record shows</h3>
+        <p>This log entry lists the names on a certificate and the issuer when available.</p>
+        <ul id="names" aria-label="Names on the certificate"></ul>
+        <h3>What remains open</h3>
+        <p>The log entry alone cannot establish who operates a domain or whether the certificate is currently in use.</p>
+      </aside>
+    </div>
+    <noscript><p class="wrap">Enable JavaScript to search certificate records.</p></noscript>
+  </main>
+</body>
+</html>

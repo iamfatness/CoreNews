@@ -1,5 +1,8 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .routers import search
@@ -19,6 +22,11 @@ app.add_middleware(
 )
 
 app.include_router(search.router)
+app.mount(
+    "/research",
+    StaticFiles(directory=Path(__file__).with_name("research"), html=True),
+    name="research",
+)
 
 @app.get("/")
 async def root():

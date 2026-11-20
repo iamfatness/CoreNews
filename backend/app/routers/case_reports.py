@@ -16,6 +16,7 @@ from ..connectors.cisa_kev import AdvisoryRecord
 from ..ofac_catalog import ScreeningCandidate
 from ..research_entities import observation_time
 from .research import CaseSummary, Workspace, record_json, require_case
+from .screening import ScreeningReview
 
 router = APIRouter(prefix="/api/research/cases", tags=["case reports"])
 Kind = Literal["finding", "question"]
@@ -73,10 +74,11 @@ class CaseReport(BaseModel):
     findings: list[FindingDetail]
     evidence: list[ReportEvidence]
     uncited_findings: int
+    screening_reviews: list[ScreeningReview]
 
 
 class ActivityEvent(BaseModel):
-    action: Literal["case_created", "evidence_saved", "finding_added", "finding_edited"]
+    action: Literal["case_created", "evidence_saved", "finding_added", "finding_edited", "screening_reviewed"]
     target_id: UUID
     occurred_at: str
     version: int | None
@@ -161,6 +163,7 @@ def read_report(case_id: UUID, workspace_id: Workspace):
     return CaseReport(
         case=CaseSummary(**case), exported_at=store.now(), findings=findings,
         evidence=list(report_evidence(workspace_id, case_key)),
+        screening_reviews=[ScreeningReview(**row) for row in store.case_screening_reviews(workspace_id, case_key)],
         uncited_findings=sum(item.uncited for item in findings),
     )
 

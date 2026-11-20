@@ -9,6 +9,7 @@ export function wireCaseActivity(api, selectedCase, showTime) {
     evidence_saved: "Evidence saved",
     finding_added: "Report entry added",
     finding_edited: "Report entry edited",
+    screening_reviewed: "Organization identity reviewed",
   };
   let pending;
   let before;

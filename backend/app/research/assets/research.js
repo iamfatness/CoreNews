@@ -3,6 +3,7 @@ import { wireCaseWatches } from "./case-watches.js";
 import { wireEarthquakeMap } from "./earthquake-map.js";
 import { wireOfacScreening } from "./ofac-screening.js";
 import { wireCaseActivity } from "./case-activity.js";
+import { wireScreeningReview } from "./screening-review.js";
 
 const byId = id => document.getElementById(id);
 const form = byId("search-form");
@@ -18,6 +19,7 @@ wireCaseWatches(api, () => casePicker.value);
 wireEarthquakeMap(api, () => casePicker.value);
 wireOfacScreening(api, () => casePicker.value);
 wireCaseActivity(api, () => casePicker.value, showTime);
+wireScreeningReview(api, () => selected);
 let pending;
 let lastSearch;
 let workspaceKey;
@@ -157,6 +159,7 @@ function openRecord(entry, button) {
   byId("save-record").hidden = !entry.proof;
   byId("save-record").disabled = !casePicker.value;
   byId("verify-record").hidden = !entry.snapshot_sha256;
+  byId("review-screening-record").hidden = !(isOfac(record) && entry.id && entry.caseId);
   byId("entity-timeline").hidden = !workspaceKey || !entityFor(record);
   setText("record-status", entry.id
     ? (entry.snapshot_sha256 ? "Saved record with a verifiable metadata snapshot." : "Saved record metadata.")

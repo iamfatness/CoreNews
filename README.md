@@ -198,6 +198,12 @@ applicable lists when reviewing a candidate. A result or an empty lookup
 cannot establish sanctions status. A saved case record cites its snapshot
 date, hash, and OFAC list entry.
 
+In **View saved evidence**, open the candidate and choose **Review
+organization identity**. Record the decision and supporting references.
+The case report includes the decision, rationale, and source snapshot.
+Case activity records each revision at workspace level. Rerun the schema
+initializer to add the review table to an existing installation.
+
 ## Architecture Overview
 - Ingestion layer with modular connectors (`backend/app/connectors/`)
 - Storage: Postgres (OpenSearch planned)

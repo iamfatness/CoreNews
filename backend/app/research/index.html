@@ -132,6 +132,7 @@
           <button class="secondary" id="copy-citation" type="button">Copy citation</button>
           <button class="primary" id="save-record" type="button" hidden>Save to case</button>
           <button class="secondary" id="verify-record" type="button" hidden>Verify snapshot</button>
+          <button class="secondary" id="review-screening-record" type="button" hidden>Review organization identity</button>
           <button class="secondary" id="entity-timeline" type="button" hidden>View entity timeline</button>
         </div>
         <p id="record-status" role="status"></p>
@@ -265,6 +266,30 @@
       <p id="activity-status" role="status"></p>
       <ol id="activity-events"></ol>
       <button id="activity-older" class="secondary" type="button" hidden>Load older activity</button>
+    </div>
+  </dialog>
+  <dialog id="screening-review-dialog" class="case-dialog" aria-labelledby="screening-review-title">
+    <header class="report-toolbar">
+      <h2 id="screening-review-title">Review organization identity</h2>
+      <form method="dialog"><button class="secondary">Close review</button></form>
+    </header>
+    <div class="report-controls">
+      <p id="screening-review-record"></p>
+      <a id="screening-review-source" target="_blank" rel="noopener noreferrer">Open OFAC Sanctions List Service</a>
+      <p>Use the original OFAC entry and independent evidence to review the organization's identity. Record the basis for your conclusion.</p>
+      <p id="screening-review-status" role="status"></p>
+      <form id="screening-review-form" hidden>
+        <label for="screening-decision">Identity review</label>
+        <select id="screening-decision" required>
+          <option value="">Choose a decision</option>
+          <option value="same_organization">Same organization</option>
+          <option value="different_organization">Different organization</option>
+          <option value="inconclusive">Inconclusive</option>
+        </select>
+        <label for="screening-rationale">Rationale and references</label>
+        <textarea id="screening-rationale" rows="4" maxlength="2000" required></textarea>
+        <button class="primary" type="submit">Save identity review</button>
+      </form>
     </div>
   </dialog>
 </body>

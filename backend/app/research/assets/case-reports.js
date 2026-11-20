@@ -1,3 +1,5 @@
+import { screeningDecisions } from "./screening-review.js";
+
 const byId = id => document.getElementById(id);
 
 function node(tag, text, className) {
@@ -35,6 +37,7 @@ function downloadFile(blob, filename) {
 function buildReport(report, onEdit) {
   const fragment = document.createDocumentFragment();
   const sources = new Map(report.evidence.map(item => [item.id, item]));
+  const screeningReviews = new Map((report.screening_reviews || []).map(review => [review.evidence_id, review]));
   fragment.append(
     node("p", "CoreNews · Case report", "report-eyebrow"),
     node("h2", report.case.title),
@@ -98,6 +101,13 @@ function buildReport(report, onEdit) {
     if (original) entry.append(original);
     if (item.source_snapshot_sha256) {
       entry.append(node("p", "OFAC list entry " + item.source_entry_id + " · Snapshot SHA-256 " + item.source_snapshot_sha256, "report-meta"));
+      const review = screeningReviews.get(item.id);
+      if (review && item.verification !== "mismatch") {
+        entry.append(node("p", "Identity review · " + screeningDecisions[review.decision], "report-meta"),
+          node("p", review.rationale, "finding-text"), node("p", "Reviewed " + review.updated_at, "report-meta"));
+      } else {
+        entry.append(node("p", review ? "Identity review needs evidence verification" : "Identity review pending", "report-meta"));
+      }
     }
     if (item.source_version) entry.append(node("p", "Catalog version " + item.source_version, "report-meta"));
     const states = {

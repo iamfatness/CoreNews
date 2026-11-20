@@ -1,4 +1,5 @@
 import { wireCaseReports } from "./case-reports.js";
+import { wireCaseWatches } from "./case-watches.js";
 
 const byId = id => document.getElementById(id);
 const form = byId("search-form");
@@ -10,6 +11,7 @@ const records = byId("records");
 const detail = byId("detail");
 const casePicker = byId("active-case");
 wireCaseReports(api, () => casePicker.value);
+wireCaseWatches(api, () => casePicker.value);
 let pending;
 let lastSearch;
 let workspaceKey;
@@ -261,6 +263,7 @@ function updateCases(cases, activeId) {
   casePicker.value = activeId || "";
   byId("view-case").disabled = !casePicker.value;
   byId("open-case-report").disabled = !casePicker.value;
+  byId("open-case-watches").disabled = !casePicker.value;
   byId("save-record").disabled = !casePicker.value;
 }
 
@@ -375,6 +378,7 @@ byId("new-case").addEventListener("submit", async event => {
 casePicker.addEventListener("change", () => {
   byId("view-case").disabled = !casePicker.value;
   byId("open-case-report").disabled = !casePicker.value;
+  byId("open-case-watches").disabled = !casePicker.value;
   byId("save-record").disabled = !casePicker.value;
   if (byId("results-title").textContent === "Saved evidence") {
     clearResults("Saved evidence");

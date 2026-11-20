@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import os
 import tempfile
@@ -13,6 +14,7 @@ from sqlalchemy import create_engine, update
 from sqlalchemy.schema import CreateSchema, DropSchema
 
 from app.config import settings
+from app import watch_store, watch_worker
 from app.connectors.edgar import EdgarConnector
 from app.connectors.gdelt import normalize_news
 from app.evidence_store import database, evidence, metadata
@@ -85,6 +87,72 @@ class ResearchEvidenceTests(unittest.TestCase):
         response = self.client.post(ROOT + "/cases", headers=headers(workspace), json={"title":title})
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()["id"]
+
+    def test_scheduled_watches_baseline_deduplicate_and_save_case_alert(self):
+        case = self.create("first")
+        root = ROOT + f"/cases/{case}"
+        first_payload = {"articles": [{"url":"https://example.org/news/a","title":"First"}]}
+        next_payload = {"articles": [
+            {"url":"https://example.org/news/a","title":"First"},
+            {"url":"https://example.org/news/b","title":"Second"},
+        ]}
+        with patch.object(settings, "research_watches_enabled", True):
+            with patch.object(watch_store, "epoch", return_value=10000):
+                creation = self.client.post(root + "/watches", headers=headers("first"),
+                                            json={"source":"gdelt","query":"Port Strike","interval_minutes":60})
+                self.assertEqual(creation.status_code, 201, creation.text)
+                duplicate = self.client.post(root + "/watches", headers=headers("first"),
+                                             json={"source":"gdelt","query":"port strike","interval_minutes":60})
+                self.assertEqual(duplicate.json()["id"], creation.json()["id"])
+            with patch.object(watch_worker, "lookup_news", AsyncMock(side_effect=[
+                normalize_news("port strike", first_payload),
+                normalize_news("port strike", next_payload),
+                normalize_news("port strike", next_payload),
+            ])):
+                for check, expected in ((10000, 0), (13600, 1), (17200, 1)):
+                    with patch.object(watch_store, "epoch", return_value=check):
+                        self.assertTrue(asyncio.run(watch_worker.run_once()))
+                    alerts = self.client.get(root + "/monitoring", headers=headers("first")).json()["alerts"]
+                    self.assertEqual(len(alerts), expected)
+        alert = alerts[0]
+        self.assertEqual(alert["record"]["title"], "Second")
+        self.assertEqual(self.client.get(root + "/monitoring", headers=headers("second")).status_code, 404)
+        alert_path = root + "/alerts/" + alert["id"]
+        self.assertEqual(self.client.put(alert_path + "/review", headers=headers("second")).status_code, 404)
+        self.assertEqual(self.client.put(alert_path + "/evidence", headers=headers("second")).status_code, 404)
+        saved = self.client.put(alert_path + "/evidence", headers=headers("first"))
+        self.assertEqual(saved.status_code, 200, saved.text)
+        repeated = self.client.put(alert_path + "/evidence", headers=headers("first"))
+        self.assertEqual(saved.json()["id"], repeated.json()["id"])
+        self.assertTrue(self.client.put(alert_path + "/review", headers=headers("first")).json()["reviewed"])
+        after = self.client.get(root + "/monitoring", headers=headers("first")).json()
+        self.assertTrue(after["alerts"][0]["reviewed"])
+
+    def test_watch_recovers_expired_lease_and_ignores_old_worker(self):
+        case = self.create("first")
+        root = ROOT + f"/cases/{case}"
+        body = {"source":"edgar","query":"320193","interval_minutes":60}
+        disabled = self.client.post(root + "/watches", headers=headers("first"), json=body)
+        self.assertEqual(disabled.status_code, 503)
+        with patch.object(settings, "research_watches_enabled", True), \
+             patch.object(watch_store, "epoch", return_value=10000):
+            creation = self.client.post(root + "/watches", headers=headers("first"), json=body)
+            self.assertEqual(creation.status_code, 201, creation.text)
+            old = watch_store.claim_due(10000)
+            self.assertIsNotNone(old)
+            self.assertIsNone(watch_store.claim_due(10001))
+            replacement = watch_store.claim_due(10000 + watch_store.LEASE_SECONDS)
+            self.assertNotEqual(old["lease_id"], replacement["lease_id"])
+            watch_store.finish_check(old, 10121, [], "Stale worker error")
+            watch_store.finish_check(replacement, 10122, [], "Retryable source error")
+            current = self.client.get(root + "/monitoring", headers=headers("first")).json()["watches"][0]
+            self.assertIsNone(current["last_success"])
+            self.assertEqual(current["last_error"], "Retryable source error")
+            target = root + "/watches/" + current["id"]
+            self.assertEqual(self.client.patch(target, headers=headers("first"), json={"paused":True}).status_code, 200)
+            self.assertIsNone(watch_store.claim_due(20000))
+            self.assertTrue(self.client.patch(target, headers=headers("first"), json={"paused":False}).status_code == 200)
+            self.assertIsNotNone(watch_store.claim_due(20000))
 
     def search(self, workspace, source, query):
         return self.client.get(ROOT + "/search", headers=headers(workspace),

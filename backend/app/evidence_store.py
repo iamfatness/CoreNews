@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from sqlalchemy import (
     and_,
-    Column, ForeignKeyConstraint, Integer, MetaData, String, Table, Text, UniqueConstraint,
+    BigInteger, Boolean, Column, ForeignKey, ForeignKeyConstraint, Integer, MetaData, String, Table, Text, UniqueConstraint,
     create_engine, insert, select, update,
 )
 from sqlalchemy.exc import IntegrityError
@@ -45,6 +45,33 @@ findings = Table(
     Column("created_at", String(32), nullable=False),
     Column("updated_at", String(32), nullable=False),
     ForeignKeyConstraint(["workspace_id", "case_id"], [cases.c.workspace_id, cases.c.id]),
+)
+watches = Table(
+    "research_case_watches", metadata,
+    Column("id", String(36), primary_key=True),
+    Column("workspace_id", String(128), nullable=False),
+    Column("case_id", String(36), nullable=False),
+    Column("source", String(12), nullable=False),
+    Column("query", String(253), nullable=False),
+    Column("interval_minutes", Integer, nullable=False),
+    Column("paused", Boolean, nullable=False),
+    Column("next_run", BigInteger, nullable=False, index=True),
+    Column("lease_id", String(36)),
+    Column("lease_until", BigInteger),
+    Column("last_success", BigInteger),
+    Column("last_error", String(400)),
+    ForeignKeyConstraint(["workspace_id", "case_id"], [cases.c.workspace_id, cases.c.id]),
+    UniqueConstraint("workspace_id", "case_id", "source", "query"),
+)
+watch_observations = Table(
+    "research_watch_observations", metadata,
+    Column("id", String(36), primary_key=True),
+    Column("watch_id", String(36), ForeignKey(watches.c.id), nullable=False),
+    Column("record_id", String(128), nullable=False),
+    Column("record_json", Text),
+    Column("observed_at", BigInteger, nullable=False),
+    Column("reviewed", Boolean, nullable=False),
+    UniqueConstraint("watch_id", "record_id"),
 )
 
 

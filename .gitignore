@@ -33,3 +33,4 @@ Thumbs.db
 *.pem
 secrets/
 .env.local
+.env.review

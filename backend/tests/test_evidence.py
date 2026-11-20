@@ -18,7 +18,7 @@ from app import ofac_catalog, watch_store, watch_worker
 from app.connectors.edgar import EdgarConnector
 from app.connectors.gdelt import normalize_news
 from app.connectors.usgs import normalize_earthquakes
-from app.evidence_store import database, evidence, metadata
+from app.evidence_store import activity, database, evidence, metadata
 from app.main import app
 from app.routers import geo, research, search
 
@@ -88,6 +88,18 @@ class ResearchEvidenceTests(unittest.TestCase):
         response = self.client.post(ROOT + "/cases", headers=headers(workspace), json={"title":title})
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()["id"]
+
+    def test_readiness_checks_initialized_research_schema(self):
+        self.assertEqual(self.client.get("/ready").json(), {"status": "ready"})
+        case = self.create("first")
+        activity.drop(self.engine)
+        response = self.client.get("/ready")
+        self.assertEqual(response.status_code, 503, response.text)
+        self.assertEqual(response.json()["detail"], "Research storage is not ready.")
+        self.assertEqual(self.client.get("/health").json(), {"status": "ok"})
+        metadata.create_all(self.engine)
+        self.assertEqual(self.client.get("/ready").json(), {"status": "ready"})
+        self.assertEqual(self.client.get(ROOT + f"/cases/{case}", headers=headers("first")).status_code, 200)
 
     def test_screening_versions_and_saves_exact_organization_candidates(self):
         def snapshot(version, name):

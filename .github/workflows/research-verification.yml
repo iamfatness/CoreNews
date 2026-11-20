@@ -43,3 +43,31 @@ jobs:
         env:
           CORENEWS_TEST_DATABASE_URL: postgresql://corenews_test:fixture-only@127.0.0.1:5432/corenews_test
         run: python -m unittest discover -s tests -v
+
+  review-compose:
+    runs-on: ubuntu-latest
+    env:
+      CORENEWS_DB_PASSWORD: ci-compose-fixture
+      RESEARCH_SIGNING_KEY: ci-compose-fixture-signing-key-only
+      CORENEWS_SMOKE_KEY: ci-compose-fixture-workspace
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure disposable workspace
+        run: |
+          python3 -c 'import hashlib, json, os; digest = hashlib.sha256(os.environ["CORENEWS_SMOKE_KEY"].encode()).hexdigest(); print("RESEARCH_WORKSPACE_TOKEN_HASHES=" + json.dumps({"smoke": digest}))' >> "$GITHUB_ENV"
+      - name: Build and start review stack
+        run: docker compose -f compose.review.yml up -d --build
+      - name: Verify workspace, evidence, report, and activity
+        run: |
+          curl --fail --silent --show-error --retry 12 --retry-delay 2 --retry-all-errors http://127.0.0.1:8080/ready
+          docker compose -f compose.review.yml exec -T backend python -m app.ofac_catalog /dev/stdin <<'XML'
+          <sdnList><publshInformation><Publish_Date>11/01/2026</Publish_Date><Record_Count>1</Record_Count></publshInformation>
+          <sdnEntry><uid>101</uid><lastName>Fixture Organization</lastName><sdnType>Entity</sdnType></sdnEntry></sdnList>
+          XML
+          python3 backend/tests/smoke_review.py
+      - name: Collect logs on failure
+        if: failure()
+        run: docker compose -f compose.review.yml logs --no-color
+      - name: Remove disposable stack
+        if: always()
+        run: docker compose -f compose.review.yml down --volumes

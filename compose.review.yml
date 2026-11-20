@@ -1,0 +1,62 @@
+name: corenews-review
+
+x-app: &app
+  image: corenews/review:${CORENEWS_IMAGE_TAG:-local}
+  build: ./backend
+  environment:
+    DATABASE_URL: "postgresql://corenews:${CORENEWS_DB_PASSWORD:?Set CORENEWS_DB_PASSWORD}@postgres:5432/corenews?connect_timeout=3"
+    RESEARCH_WORKSPACE_TOKEN_HASHES: "${RESEARCH_WORKSPACE_TOKEN_HASHES:?Set RESEARCH_WORKSPACE_TOKEN_HASHES}"
+    RESEARCH_SIGNING_KEY: "${RESEARCH_SIGNING_KEY:?Set RESEARCH_SIGNING_KEY}"
+    RESEARCH_SNAPSHOT_SOURCES: "${RESEARCH_SNAPSHOT_SOURCES:-[]}"
+    EDGAR_USER_AGENT: "${EDGAR_USER_AGENT:-}"
+    GDELT_ENABLED: "${GDELT_ENABLED:-false}"
+    RESEARCH_WATCHES_ENABLED: "${RESEARCH_WATCHES_ENABLED:-false}"
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: corenews
+      POSTGRES_DB: corenews
+      POSTGRES_PASSWORD: "${CORENEWS_DB_PASSWORD:?Set CORENEWS_DB_PASSWORD}"
+    volumes:
+      - review-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "corenews", "-d", "corenews"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+
+  initialize:
+    <<: *app
+    command: ["python", "-m", "app.evidence_store"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  backend:
+    <<: *app
+    ports:
+      - "127.0.0.1:${CORENEWS_REVIEW_PORT:-8080}:8000"
+    depends_on:
+      initialize:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/ready', timeout=4).close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
+
+  watch-worker:
+    <<: *app
+    profiles: ["monitoring"]
+    command: ["python", "-m", "app.watch_worker"]
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: on-failure:3
+
+volumes:
+  review-data:

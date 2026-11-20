@@ -18,16 +18,46 @@
     <section class="search-section" aria-labelledby="research-title">
       <div class="wrap">
         <h1 id="research-title">Research</h1>
-        <p>Search public certificate records for a domain.</p>
+        <p>Find certificate records and company filings. Trace each record to its source.</p>
         <form id="search-form" action="./" method="get">
-          <label for="domain">Domain</label>
+          <label for="source-mode">Source</label>
+          <select id="source-mode" name="source">
+            <option value="crtsh">Domain certificates · crt.sh</option>
+            <option value="edgar">Company filings · SEC EDGAR</option>
+          </select>
+          <label for="domain" id="query-label">Domain</label>
           <div class="search-controls">
             <input id="domain" name="q" type="search" required maxlength="253"
               placeholder="example.org" spellcheck="false" autocapitalize="none" autocomplete="off">
             <button class="primary" type="submit">Search</button>
           </div>
         </form>
-        <p class="source">Source <span>crt.sh · Certificate Transparency</span></p>
+        <section class="case-tools" aria-labelledby="workspace-title">
+          <h2 id="workspace-title">Case workspace</h2>
+          <form id="workspace-form">
+            <label for="workspace-key">Workspace key</label>
+            <div class="search-controls">
+              <input id="workspace-key" type="password" required maxlength="512" autocomplete="off">
+              <button class="secondary" type="submit">Open workspace</button>
+            </div>
+          </form>
+          <div id="case-controls" hidden>
+            <form id="new-case">
+              <label for="case-title">New case name</label>
+              <div class="search-controls">
+                <input id="case-title" required maxlength="160">
+                <button class="secondary" type="submit">Create case</button>
+              </div>
+            </form>
+            <label for="active-case">Active case</label>
+            <div class="case-actions">
+              <select id="active-case"></select>
+              <button class="secondary" id="view-case" type="button" disabled>View saved evidence</button>
+              <button class="secondary" id="close-workspace" type="button">Close workspace</button>
+            </div>
+          </div>
+          <p id="workspace-status" role="status"></p>
+        </section>
       </div>
     </section>
     <div class="wrap workspace">
@@ -47,24 +77,25 @@
       </section>
       <aside id="detail" aria-labelledby="detail-title" hidden>
         <div class="detail-header">
-          <span>Certificate record</span>
+          <span id="record-kind">Record</span>
           <button id="back" class="secondary" type="button">Back to results</button>
         </div>
         <h2 id="detail-title" tabindex="-1"></h2>
         <p id="attribution"></p>
-        <a id="original" class="original" target="_blank" rel="noopener noreferrer">View original record on crt.sh ↗</a>
-        <dl>
-          <div><dt>Logged by source</dt><dd id="logged"></dd></div>
-          <div><dt>Collected by CoreNews</dt><dd id="collected"></dd></div>
-          <div><dt>Valid from</dt><dd id="valid-from"></dd></div>
-          <div><dt>Valid until</dt><dd id="valid-until"></dd></div>
-          <div class="wide"><dt>Issuer</dt><dd id="issuer"></dd></div>
-        </dl>
+        <a id="original" class="original" target="_blank" rel="noopener noreferrer">View original record</a>
+        <dl id="provenance"></dl>
         <h3>What this record shows</h3>
-        <p>This log entry lists the names on a certificate and the issuer when available.</p>
+        <p id="record-shows"></p>
         <ul id="names" aria-label="Names on the certificate"></ul>
         <h3>What remains open</h3>
-        <p>The log entry alone cannot establish who operates a domain or whether the certificate is currently in use.</p>
+        <p id="record-limits"></p>
+        <div class="case-actions">
+          <button class="secondary" id="copy-citation" type="button">Copy citation</button>
+          <button class="primary" id="save-record" type="button" hidden>Save to case</button>
+          <button class="secondary" id="verify-record" type="button" hidden>Verify snapshot</button>
+        </div>
+        <p id="record-status" role="status"></p>
+        <textarea id="citation-text" aria-label="Citation text" rows="4" readonly hidden></textarea>
       </aside>
     </div>
     <noscript><p class="wrap">Enable JavaScript to search certificate records.</p></noscript>

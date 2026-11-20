@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .config import settings
-from .routers import search
+from .routers import research, search
 
 app = FastAPI(
     title="CoreNews",
@@ -22,6 +22,7 @@ app.add_middleware(
 )
 
 app.include_router(search.router)
+app.include_router(research.router)
 app.mount(
     "/research",
     StaticFiles(directory=Path(__file__).with_name("research"), html=True),

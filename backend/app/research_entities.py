@@ -1,10 +1,11 @@
 from typing import Literal
 
+from .connectors.cisa_kev import AdvisoryRecord
 from .connectors.edgar import FilingRecord
 from .connectors.gdelt import NewsRecord
 from .connectors.usgs import EarthquakeRecord
 from .ofac_catalog import ScreeningCandidate
-from .records import CertificateRecord, normalize_domain
+from .records import CertificateRecord, ResearchRecord, normalize_domain
 
 EntityKind = Literal["domain", "company"]
 
@@ -16,7 +17,7 @@ def entity_domain(value: str) -> str | None:
         return None
 
 
-def entity_matches(record: CertificateRecord | FilingRecord | NewsRecord | EarthquakeRecord | ScreeningCandidate, kind: EntityKind, key: str) -> bool:
+def entity_matches(record: ResearchRecord, kind: EntityKind, key: str) -> bool:
     if kind == "company":
         return isinstance(record, FilingRecord) and record.cik == key
     if isinstance(record, CertificateRecord):
@@ -26,7 +27,9 @@ def entity_matches(record: CertificateRecord | FilingRecord | NewsRecord | Earth
     return False
 
 
-def observation_time(record: CertificateRecord | FilingRecord | NewsRecord | EarthquakeRecord | ScreeningCandidate) -> tuple[str, str]:
+def observation_time(record: ResearchRecord) -> tuple[str, str]:
+    if isinstance(record, AdvisoryRecord):
+        return record.added_on.isoformat(), "Added to CISA KEV"
     if isinstance(record, ScreeningCandidate):
         return record.published_on.isoformat(), "SDN snapshot published"
     if isinstance(record, EarthquakeRecord) and record.occurred_at:

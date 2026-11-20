@@ -28,6 +28,7 @@ const discoverySources = {
   crtsh: {name:"crt.sh", label:"Domain", example:"example.org"},
   edgar: {name:"SEC EDGAR", label:"Ticker or SEC CIK", example:"AAPL or 0000320193"},
   gdelt: {name:"GDELT", label:"News topic", example:"port strike"},
+  cisa: {name:"CISA KEV", label:"CVE identifier", example:"CVE-2024-1234"},
 };
 
 function setText(id, value) {
@@ -58,9 +59,13 @@ function isOfac(record) {
   return record.record_type === "ofac_candidate";
 }
 
+function isAdvisory(record) {
+  return record.record_type === "cisa_advisory";
+}
+
 function entityFor(record) {
   if (isFiling(record)) return ["company", record.cik, record.company];
-  if (isEarthquake(record) || isOfac(record)) return null;
+  if (isEarthquake(record) || isOfac(record) || isAdvisory(record)) return null;
   const domain = isNews(record) ? record.publisher_domain
     : [...(record.names || []), record.title].find(name => /^[a-z0-9.-]+\.[a-z0-9-]+$/i.test(name));
   return domain ? ["domain", domain, domain] : null;
@@ -77,6 +82,11 @@ function recordFields(record) {
     : isOfac(record)
     ? [["SDN snapshot published", record.published_on], ["Snapshot SHA-256", record.snapshot_id],
        ["List entry", record.list_uid], ["Programs", record.programs.join(", ") || "Not provided"]]
+    : isAdvisory(record)
+    ? [["CVE", record.cve], ["Vendor or project", record.vendor || "Not provided"],
+       ["Product", record.product || "Not provided"], ["Added to CISA KEV", record.added_on],
+       ["Federal remediation deadline", record.federal_due_on || "Not provided"],
+       ["CISA catalog version", record.catalog_version]]
     : [["Logged by source", showTime(record.logged_at)], ["Valid from", showTime(record.valid_from)],
        ["Valid until", showTime(record.valid_until)], ["Issuer", record.issuer || "Not provided"]];
   return [["Collected by CoreNews", showTime(record.collected_at)], ...sourceFields];
@@ -108,7 +118,8 @@ function openRecord(entry, button) {
   const filing = isFiling(record);
   setText("detail-title", record.title);
   const kind = {sec_filing:"Company filing", news_article:"News article", earthquake:"Earthquake",
-    ofac_candidate:"Organization screening candidate", certificate_transparency:"Certificate record"};
+    ofac_candidate:"Organization screening candidate", cisa_advisory:"Remediation advisory",
+    certificate_transparency:"Certificate record"};
   setText("record-kind", kind[record.record_type]);
   setText("attribution", record.source + " · " + record.id.split(":").at(-1));
   byId("original").href = record.source_url;
@@ -127,12 +138,14 @@ function openRecord(entry, button) {
     : isNews(record) ? "GDELT indexed a link and headline from the publisher."
     : isEarthquake(record) ? "USGS reported an earthquake with an estimated epicenter and magnitude."
     : isOfac(record) ? "The primary name in this SDN snapshot matched the organization name entered."
+    : isAdvisory(record) ? (record.action || "CISA lists this CVE in its remediation catalog.")
     : "The certificate log lists names on the certificate and the issuer when available.");
   setText("record-limits", filing
     ? "A filing records the filer’s disclosure. Check the document for the claim you want to cite."
     : isNews(record) ? "The indexing time can differ from publication time. Check the publisher’s article for the original reporting."
     : isEarthquake(record) ? "USGS may revise the location or magnitude. Follow the source link for the latest event record."
     : isOfac(record) ? "A name match alone cannot establish identity or sanctions status. Review the underlying OFAC entry."
+    : isAdvisory(record) ? "Check the vendor's guidance for affected versions in your environment. The CISA deadline applies to covered U.S. federal agencies."
     : "The log entry alone cannot establish who operates a domain or whether the certificate is currently in use.");
   const names = record.names || [];
   byId("names").hidden = !names.length;
@@ -175,6 +188,7 @@ function resultRow(entry) {
     : isNews(record) ? record.publisher_domain
     : isEarthquake(record) ? "Magnitude " + record.magnitude
     : isOfac(record) ? "SDN snapshot published " + record.published_on
+    : isAdvisory(record) ? "Added to CISA KEV " + record.added_on
     : record.issuer || "Issuer not provided";
   button.append(meta, title, summary);
   button.addEventListener("click", () => openRecord(entry, button));
@@ -461,9 +475,10 @@ byId("verify-record").addEventListener("click", async () => {
 byId("copy-citation").addEventListener("click", async () => {
   const {record} = selected;
   const parts = [record.title, record.source, record.id];
-  const date = record.filed_on || record.seen_at || record.occurred_at || record.published_on || record.logged_at;
+  const date = record.filed_on || record.seen_at || record.occurred_at || record.published_on || record.added_on || record.logged_at;
   if (date) parts.push((isFiling(record) ? "Filed " : isNews(record) ? "Seen by GDELT "
-    : isEarthquake(record) ? "Occurred " : isOfac(record) ? "SDN snapshot published " : "Logged ") + showTime(date));
+    : isEarthquake(record) ? "Occurred " : isOfac(record) ? "SDN snapshot published "
+    : isAdvisory(record) ? "Added to CISA KEV " : "Logged ") + showTime(date));
   parts.push("Collected " + showTime(record.collected_at), record.source_url);
   const citation = parts.join(" · ");
   try {
@@ -504,7 +519,7 @@ byId("back").addEventListener("click", () => {
   selectedButton?.focus();
 });
 const params = new URLSearchParams(location.search);
-if (["edgar", "gdelt"].includes(params.get("source"))) {
+if (Object.hasOwn(discoverySources, params.get("source"))) {
   mode.value = params.get("source");
   mode.dispatchEvent(new Event("change"));
 }

@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, StringConstraints, TypeAdapter, Validatio
 
 from .. import evidence_store as store
 from ..config import settings
+from ..connectors.cisa_kev import CATALOG, AdvisoryRecord, CisaKevConnector, normalize_cve
 from ..connectors.edgar import EdgarConnector, FilingRecord, UnknownFiler, normalize_filer
 from ..connectors.gdelt import GdeltConnector, NewsRecord, news_query
 from ..connectors.usgs import EarthquakeRecord
@@ -20,10 +21,11 @@ from .search import lookup_certificates
 router = APIRouter(prefix="/api/research", tags=["research"])
 edgar = EdgarConnector()
 gdelt = GdeltConnector()
+cisa = CisaKevConnector()
 Workspace = Annotated[str, Depends(workspace)]
-Source = Literal["crtsh", "edgar", "gdelt"]
+Source = Literal["crtsh", "edgar", "gdelt", "cisa"]
 Record = Annotated[
-    CertificateRecord | FilingRecord | NewsRecord | EarthquakeRecord | ScreeningCandidate,
+    CertificateRecord | FilingRecord | NewsRecord | EarthquakeRecord | ScreeningCandidate | AdvisoryRecord,
     Field(discriminator="record_type"),
 ]
 record_json = TypeAdapter(Record)
@@ -32,6 +34,7 @@ SOURCES = {
     "crtsh": ("crt.sh", "Domain", "example.org", "https://crt.sh/"),
     "edgar": ("SEC EDGAR", "Ticker or SEC CIK", "AAPL or 0000320193", "https://www.sec.gov/edgar/search/"),
     "gdelt": ("GDELT", "News topic", "port strike", "https://www.gdeltproject.org/"),
+    "cisa": ("CISA KEV", "CVE identifier", "CVE-2024-1234", CATALOG),
 }
 
 
@@ -71,7 +74,7 @@ class SearchEnvelope(BaseModel):
 class DiscoveryInput(BaseModel):
     queries: Annotated[
         dict[Source, Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=253)]],
-        Field(min_length=1, max_length=3),
+        Field(min_length=1, max_length=len(SOURCES)),
     ]
 
 
@@ -152,8 +155,23 @@ async def lookup_news(query: str):
         raise HTTPException(502, "GDELT did not return usable results.") from exc
 
 
+async def lookup_advisory(query: str):
+    if not settings.cisa_kev_enabled:
+        raise HTTPException(503, "CISA KEV is disabled on this instance.")
+    try:
+        identifier = normalize_cve(query)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    try:
+        return await cisa.search(identifier)
+    except (httpx.TimeoutException, TimeoutError) as exc:
+        raise HTTPException(504, "CISA KEV timed out. Try again.") from exc
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(502, "CISA KEV is temporarily unavailable.") from exc
+
+
 async def source_search(workspace_id: str, source: Source, query: str) -> SearchEnvelope:
-    fetch = {"crtsh": lookup_certificates, "edgar": lookup_filings, "gdelt": lookup_news}[source]
+    fetch = {"crtsh": lookup_certificates, "edgar": lookup_filings, "gdelt": lookup_news, "cisa": lookup_advisory}[source]
     result = await fetch(query)
     return SearchEnvelope(
         query=result.query, source=result.source, total=result.total,
@@ -171,7 +189,10 @@ async def search(
 
 @router.get("/sources")
 def list_sources(workspace_id: Workspace):
-    enabled = {"crtsh": True, "edgar": bool(settings.edgar_user_agent), "gdelt": settings.gdelt_enabled}
+    enabled = {
+        "crtsh": True, "edgar": bool(settings.edgar_user_agent),
+        "gdelt": settings.gdelt_enabled, "cisa": settings.cisa_kev_enabled,
+    }
     return [
         {"id": key, "name": name, "input_label": label, "example": example,
          "website": website, "enabled": enabled[key]}

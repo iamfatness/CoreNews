@@ -12,6 +12,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field, StringConstraints, ValidationError, computed_field
 
 from .. import evidence_store as store
+from ..connectors.cisa_kev import AdvisoryRecord
 from ..ofac_catalog import ScreeningCandidate
 from ..research_entities import observation_time
 from .research import CaseSummary, Workspace, record_json, require_case
@@ -62,6 +63,7 @@ class ReportEvidence(BaseModel):
     metadata_available: bool
     source_snapshot_sha256: str | None = None
     source_entry_id: str | None = None
+    source_version: str | None = None
 
 
 class CaseReport(BaseModel):
@@ -111,6 +113,7 @@ def report_source(row, number: int) -> ReportEvidence:
         source_date=observed, date_label=label, collected_at=record.collected_at.isoformat(),
         source_snapshot_sha256=record.snapshot_id if isinstance(record, ScreeningCandidate) else None,
         source_entry_id=record.list_uid if isinstance(record, ScreeningCandidate) else None,
+        source_version=record.catalog_version if isinstance(record, AdvisoryRecord) else None,
         metadata_available=True,
     )
 

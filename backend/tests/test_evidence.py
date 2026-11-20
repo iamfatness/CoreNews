@@ -1,16 +1,20 @@
 import hashlib
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
+from uuid import uuid4
 
 import httpx
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
-from sqlalchemy import update
+from sqlalchemy import create_engine, update
+from sqlalchemy.schema import CreateSchema, DropSchema
 
 from app.config import settings
 from app.connectors.edgar import EdgarConnector
+from app.connectors.gdelt import normalize_news
 from app.evidence_store import database, evidence, metadata
 from app.main import app
 from app.routers import research, search
@@ -37,7 +41,8 @@ class ResearchEvidenceTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.addCleanup(database.cache_clear)
-        url = "sqlite:///" + (Path(directory.name) / "research.sqlite").as_posix()
+        pg_url = os.environ.get("CORENEWS_TEST_DATABASE_URL")
+        url = pg_url or "sqlite:///" + (Path(directory.name) / "research.sqlite").as_posix()
         experiment = patch.multiple(
             settings,
             database_url=url,
@@ -48,11 +53,27 @@ class ResearchEvidenceTests(unittest.TestCase):
             research_signing_key=SecretStr("fixture-only-signing-key-for-tests"),
             research_snapshot_sources={"SEC EDGAR"},
             edgar_user_agent="CoreNews test contact@example.org",
+            gdelt_enabled=True,
         )
         experiment.start()
         self.addCleanup(experiment.stop)
-        self.engine = database(url)
-        self.addCleanup(self.engine.dispose)
+        if pg_url:
+            base = create_engine(url)
+            self.addCleanup(base.dispose)
+            schema = "corenews_test_" + uuid4().hex
+            with base.begin() as connection:
+                connection.execute(CreateSchema(schema))
+            def remove_schema():
+                with base.begin() as connection:
+                    connection.execute(DropSchema(schema, cascade=True))
+            self.addCleanup(remove_schema)
+            self.engine = base.execution_options(schema_translate_map={None: schema})
+            bind = patch("app.evidence_store.database", return_value=self.engine)
+            bind.start()
+            self.addCleanup(bind.stop)
+        else:
+            self.engine = database(url)
+            self.addCleanup(self.engine.dispose)
         metadata.create_all(self.engine)
         self.client = TestClient(app)
         self.addCleanup(self.client.close)
@@ -99,6 +120,11 @@ class ResearchEvidenceTests(unittest.TestCase):
         self.assertEqual(opened.status_code, 200, opened.text)
         saved = {row["record"]["source"]:row for row in opened.json()["evidence"]}
         self.assertEqual(set(saved), {"crt.sh", "SEC EDGAR"})
+        company = ROOT + "/entities/company/320193"
+        timeline = self.client.get(company, headers=headers("first")).json()["records"]
+        self.assertEqual([item["record"]["id"] for item in timeline], [filing["record"]["id"]])
+        self.assertEqual(timeline[0]["date_label"], "Filed")
+        self.assertEqual(self.client.get(company, headers=headers("second")).json()["records"], [])
         for label, expected in (("crt.sh", "not_captured"), ("SEC EDGAR", "verified")):
             item = saved[label]
             verify = ROOT + f"/cases/{case}/evidence/{item['id']}/verify"
@@ -130,3 +156,40 @@ class ResearchEvidenceTests(unittest.TestCase):
         empty_filings = {**FILINGS, "filings":{"recent":{"accessionNumber":[], "form":[], "filingDate":[]}}}
         with patch.object(research.edgar, "_request", AsyncMock(return_value=empty_filings)):
             self.assertEqual(self.search("first", "edgar", "320193").json()["records"], [])
+
+    def test_combines_sources_and_labels_partial_failure(self):
+        with patch.object(search.crtsh, "search_domain", AsyncMock(return_value=CERTIFICATES)), \
+             patch.object(research.edgar, "search", AsyncMock(side_effect=httpx.ReadTimeout("offline"))):
+            response = self.client.post(
+                ROOT + "/discover", headers=headers("first"),
+                json={"queries": {"crtsh": "example.org", "edgar": "AAPL"}},
+            )
+        self.assertEqual(response.status_code, 200, response.text)
+        result = {row["source_id"]: row for row in response.json()}
+        self.assertEqual(result["crtsh"]["records"][0]["record"]["id"], "crtsh:123")
+        self.assertIn("timed out", result["edgar"]["error"])
+        self.assertEqual(result["edgar"]["records"], [])
+        self.assertEqual(self.client.get(ROOT + "/sources").status_code, 401)
+
+    def test_news_and_certificate_timeline_uses_saved_workspace_evidence(self):
+        news = normalize_news("port strike", {"articles": [
+            {"url": "https://example.org/a#story", "title": "Test article", "seendate": "20261101T090000Z"},
+            {"url": "javascript:alert(1)", "title": "Invalid link"},
+        ]})
+        self.assertEqual([item.source_url for item in news.records], ["https://example.org/a"])
+        case = self.create("first", "First workspace case")
+        with patch.object(search.crtsh, "search_domain", AsyncMock(return_value=CERTIFICATES)), \
+             patch.object(research.gdelt, "search", AsyncMock(return_value=news)):
+            for source, query in (("crtsh", "example.org"), ("gdelt", "port strike")):
+                entry = self.search("first", source, query).json()["records"][0]
+                self.assertEqual(self.save("first", case, entry).status_code, 200)
+        timeline = ROOT + "/entities/domain/EXAMPLE.ORG."
+        records = self.client.get(timeline, headers=headers("first")).json()["records"]
+        self.assertEqual({item["record"]["source"] for item in records}, {"crt.sh", "GDELT"})
+        self.assertTrue(all(item["case_title"] == "First workspace case" for item in records))
+        self.assertEqual(next(item["date_label"] for item in records if item["record"]["source"] == "GDELT"),
+                         "Seen by GDELT")
+        self.assertEqual(self.client.get(timeline, headers=headers("second")).json()["records"], [])
+        self.assertEqual(self.client.get(ROOT + "/entities/domain/org.example", headers=headers("first")).json()["records"], [])
+        filtered = self.client.get(ROOT + "/evidence?source=gdelt", headers=headers("first")).json()["records"]
+        self.assertEqual([item["record"]["source"] for item in filtered], ["GDELT"])

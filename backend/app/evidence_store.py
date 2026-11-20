@@ -4,6 +4,7 @@ from functools import lru_cache
 from uuid import uuid4
 
 from sqlalchemy import (
+    and_,
     Column, ForeignKeyConstraint, MetaData, String, Table, Text, UniqueConstraint,
     create_engine, insert, select,
 )
@@ -73,6 +74,21 @@ def case_evidence(workspace_id: str, case_id: str):
         return conn.execute(select(evidence).where(
             evidence.c.workspace_id == workspace_id, evidence.c.case_id == case_id,
         ).order_by(evidence.c.saved_at, evidence.c.id)).mappings().all()
+
+
+def recent_evidence(workspace_id: str, limit: int):
+    scoped_cases = evidence.join(cases, and_(
+        evidence.c.workspace_id == cases.c.workspace_id, evidence.c.case_id == cases.c.id,
+    ))
+    query = (
+        select(evidence, cases.c.title.label("case_title"))
+        .select_from(scoped_cases)
+        .where(evidence.c.workspace_id == workspace_id)
+        .order_by(evidence.c.saved_at.desc(), evidence.c.id.desc())
+        .limit(limit)
+    )
+    with database(settings.database_url).connect() as conn:
+        return conn.execute(query).mappings().all()
 
 
 def get_evidence(workspace_id: str, case_id: str, evidence_id: str):

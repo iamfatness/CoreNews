@@ -18,19 +18,32 @@
     <section class="search-section" aria-labelledby="research-title">
       <div class="wrap">
         <h1 id="research-title">Research</h1>
-        <p>Find certificate records and company filings. Trace each record to its source.</p>
+        <p>Find public records and news coverage. Trace each result to its source.</p>
         <form id="search-form" action="./" method="get">
           <label for="source-mode">Source</label>
           <select id="source-mode" name="source">
             <option value="crtsh">Domain certificates · crt.sh</option>
             <option value="edgar">Company filings · SEC EDGAR</option>
+            <option value="gdelt">News coverage · GDELT</option>
+            <option value="compare">Compare sources</option>
           </select>
+          <div id="single-query">
           <label for="domain" id="query-label">Domain</label>
           <div class="search-controls">
             <input id="domain" name="q" type="search" required maxlength="253"
               placeholder="example.org" spellcheck="false" autocapitalize="none" autocomplete="off">
-            <button class="primary" type="submit">Search</button>
           </div>
+          </div>
+          <fieldset id="comparison" hidden>
+            <legend>Enter at least one search</legend>
+            <label for="compare-crtsh">Domain for crt.sh</label>
+            <input id="compare-crtsh" maxlength="253" placeholder="example.org">
+            <label for="compare-edgar">Ticker or CIK for SEC EDGAR</label>
+            <input id="compare-edgar" maxlength="253" placeholder="AAPL">
+            <label for="compare-gdelt">Topic for GDELT</label>
+            <input id="compare-gdelt" maxlength="120" placeholder="port strike">
+          </fieldset>
+          <button class="primary" id="start-search" type="submit">Search</button>
         </form>
         <section class="case-tools" aria-labelledby="workspace-title">
           <h2 id="workspace-title">Case workspace</h2>
@@ -42,6 +55,10 @@
             </div>
           </form>
           <div id="case-controls" hidden>
+            <details class="source-catalog">
+              <summary>Source catalog</summary>
+              <ul id="source-catalog"></ul>
+            </details>
             <form id="new-case">
               <label for="case-title">New case name</label>
               <div class="search-controls">
@@ -53,6 +70,7 @@
             <div class="case-actions">
               <select id="active-case"></select>
               <button class="secondary" id="view-case" type="button" disabled>View saved evidence</button>
+              <button class="secondary" id="view-workspace" type="button">Browse workspace evidence</button>
               <button class="secondary" id="close-workspace" type="button">Close workspace</button>
             </div>
           </div>
@@ -63,12 +81,22 @@
     <div class="wrap workspace">
       <section class="listing" aria-labelledby="results-title">
         <div class="results-header">
-          <h2 id="results-title">Search results</h2>
+          <h2 id="results-title" tabindex="-1">Search results</h2>
           <p id="status" role="status"></p>
         </div>
         <div id="error" class="notice" hidden>
           <p id="error-message" role="alert"></p>
           <button id="retry" class="secondary" type="button" hidden>Retry search</button>
+        </div>
+        <p id="source-notice" class="notice" role="status" hidden></p>
+        <div id="filter-tools" hidden>
+          <label for="filter-source">Filter by source</label>
+          <select id="filter-source">
+            <option value="">All sources</option>
+            <option value="crt.sh">crt.sh</option>
+            <option value="SEC EDGAR">SEC EDGAR</option>
+            <option value="GDELT">GDELT</option>
+          </select>
         </div>
         <div id="results" aria-busy="false">
           <p id="empty" class="empty">Enter a domain to look up its certificate records.</p>
@@ -93,6 +121,7 @@
           <button class="secondary" id="copy-citation" type="button">Copy citation</button>
           <button class="primary" id="save-record" type="button" hidden>Save to case</button>
           <button class="secondary" id="verify-record" type="button" hidden>Verify snapshot</button>
+          <button class="secondary" id="entity-timeline" type="button" hidden>View entity timeline</button>
         </div>
         <p id="record-status" role="status"></p>
         <textarea id="citation-text" aria-label="Citation text" rows="4" readonly hidden></textarea>

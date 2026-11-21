@@ -34,6 +34,11 @@ def main():
     case_path = ROOT + "/cases/" + case["id"]
     results = json.loads(request(ROOT + "/screening/ofac", "POST", {"name": "Fixture Organization"}))
     candidate, = results["records"]
+    workbench = json.loads(request(ROOT + "/workbench", "POST", {
+        "query": "Fixture Organization", "intent": "organization",
+    }))
+    assert workbench["records"][0]["record"]["id"] == candidate["record"]["id"]
+    assert {source["id"]: source["status"] for source in workbench["sources"]}["gdelt"] == "setup_required"
     evidence = json.loads(request(case_path + "/evidence", "PUT", candidate))
     request(case_path + "/evidence/" + evidence["id"] + "/screening-review", "PUT", {
         "decision": "inconclusive", "rationale": "Synthetic catalog fixture.", "version": 0,

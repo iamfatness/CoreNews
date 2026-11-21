@@ -4,11 +4,14 @@ import { wireEarthquakeMap } from "./earthquake-map.js";
 import { wireOfacScreening } from "./ofac-screening.js";
 import { wireCaseActivity } from "./case-activity.js";
 import { wireScreeningReview } from "./screening-review.js";
+import { renderResearchSummary } from "./workbench-results.js";
 
 const byId = id => document.getElementById(id);
 const form = byId("search-form");
 const queryInput = byId("domain");
 const mode = byId("source-mode");
+const intentPicker = byId("research-intent");
+const filters = ["filter-source", "filter-from", "filter-through", "sort-results"];
 const main = document.querySelector("main");
 const narrow = matchMedia("(max-width: 780px)");
 const records = byId("records");
@@ -31,6 +34,7 @@ const discoverySources = {
   edgar: {name:"SEC EDGAR", label:"Ticker or SEC CIK", example:"AAPL or 0000320193"},
   gdelt: {name:"GDELT", label:"News topic", example:"port strike"},
   cisa: {name:"CISA KEV", label:"CVE identifier", example:"CVE-2024-1234"},
+  gleif: {name:"GLEIF", label:"Legal name or LEI", example:"Apple Inc."},
 };
 
 function setText(id, value) {
@@ -65,8 +69,18 @@ function isAdvisory(record) {
   return record.record_type === "cisa_advisory";
 }
 
+function isOrganization(record) {
+  return record.record_type === "legal_entity";
+}
+
+function sourceDate(record) {
+  return record.filed_on || record.seen_at || record.occurred_at || record.published_on
+    || record.added_on || record.updated_at || record.logged_at;
+}
+
 function entityFor(record) {
   if (isFiling(record)) return ["company", record.cik, record.company];
+  if (isOrganization(record)) return ["organization", record.lei, record.title];
   if (isEarthquake(record) || isOfac(record) || isAdvisory(record)) return null;
   const domain = isNews(record) ? record.publisher_domain
     : [...(record.names || []), record.title].find(name => /^[a-z0-9.-]+\.[a-z0-9-]+$/i.test(name));
@@ -89,6 +103,11 @@ function recordFields(record) {
        ["Product", record.product || "Not provided"], ["Added to CISA KEV", record.added_on],
        ["Federal remediation deadline", record.federal_due_on || "Not provided"],
        ["CISA catalog version", record.catalog_version]]
+    : isOrganization(record)
+    ? [["LEI", record.lei], ["Jurisdiction", record.jurisdiction || "Not provided"],
+       ["Entity status", record.entity_status || "Not provided"],
+       ["LEI registration status", record.registration_status || "Not provided"],
+       ["Updated in GLEIF", showTime(record.updated_at)]]
     : [["Logged by source", showTime(record.logged_at)], ["Valid from", showTime(record.valid_from)],
        ["Valid until", showTime(record.valid_until)], ["Issuer", record.issuer || "Not provided"]];
   return [["Collected by CoreNews", showTime(record.collected_at)], ...sourceFields];
@@ -120,7 +139,7 @@ function openRecord(entry, button) {
   const filing = isFiling(record);
   setText("detail-title", record.title);
   const kind = {sec_filing:"Company filing", news_article:"News article", earthquake:"Earthquake",
-    ofac_candidate:"Organization screening candidate", cisa_advisory:"Remediation advisory",
+    ofac_candidate:"Organization screening candidate", cisa_advisory:"Remediation advisory", legal_entity:"Organization registry record",
     certificate_transparency:"Certificate record"};
   setText("record-kind", kind[record.record_type]);
   setText("attribution", record.source + " · " + record.id.split(":").at(-1));
@@ -141,6 +160,7 @@ function openRecord(entry, button) {
     : isEarthquake(record) ? "USGS reported an earthquake with an estimated epicenter and magnitude."
     : isOfac(record) ? "The primary name in this SDN snapshot matched the organization name entered."
     : isAdvisory(record) ? (record.action || "CISA lists this CVE in its remediation catalog.")
+    : isOrganization(record) ? "GLEIF links this LEI to the listed legal name and jurisdiction."
     : "The certificate log lists names on the certificate and the issuer when available.");
   setText("record-limits", filing
     ? "A filing records the filer’s disclosure. Check the document for the claim you want to cite."
@@ -148,6 +168,7 @@ function openRecord(entry, button) {
     : isEarthquake(record) ? "USGS may revise the location or magnitude. Follow the source link for the latest event record."
     : isOfac(record) ? "A name match alone cannot establish identity or sanctions status. Review the underlying OFAC entry."
     : isAdvisory(record) ? "Check the vendor's guidance for affected versions in your environment. The CISA deadline applies to covered U.S. federal agencies."
+    : isOrganization(record) ? "Check the legal identifier and jurisdiction before linking this record to an organization in another source."
     : "The log entry alone cannot establish who operates a domain or whether the certificate is currently in use.");
   const names = record.names || [];
   byId("names").hidden = !names.length;
@@ -177,6 +198,7 @@ function resultRow(entry) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "record";
+  button.dataset.recordId = record.id;
   button.setAttribute("aria-pressed", "false");
   const meta = document.createElement("span");
   meta.className = "meta";
@@ -192,6 +214,7 @@ function resultRow(entry) {
     : isEarthquake(record) ? "Magnitude " + record.magnitude
     : isOfac(record) ? "SDN snapshot published " + record.published_on
     : isAdvisory(record) ? "Added to CISA KEV " + record.added_on
+    : isOrganization(record) ? record.lei + (record.jurisdiction ? " · " + record.jurisdiction : "")
     : record.issuer || "Issuer not provided";
   button.append(meta, title, summary);
   button.addEventListener("click", () => openRecord(entry, button));
@@ -211,22 +234,43 @@ function clearResults(heading) {
   byId("error").hidden = true;
   byId("source-notice").hidden = true;
   byId("filter-tools").hidden = true;
-  byId("filter-source").value = "";
+  byId("workbench-summary").hidden = true;
+  resetFilters();
   listState = undefined;
   records.replaceChildren();
   setText("results-title", heading);
   setText("status", "");
 }
 
+function resetFilters() {
+  for (const id of filters) byId(id).value = id === "sort-results" ? "source" : "";
+}
+
+function revealRecord(id) {
+  resetFilters();
+  renderEntries();
+  const button = [...records.querySelectorAll("button")].find(item => item.dataset.recordId === id);
+  button?.click();
+}
+
 function renderEntries() {
   const {entries, emptyMessage, sourceCount} = listState;
-  const source = byId("filter-source").value;
-  const shown = source ? entries.filter(item => item.record.source === source) : entries;
+  const [source, from, through, sort] = filters.map(id => byId(id).value);
+  const filtered = source || from || through;
+  const shown = entries.filter(({record}) => {
+    if (source && record.source !== source) return false;
+    if (!from && !through) return true;
+    const date = sourceDate(record)?.slice(0, 10);
+    return date && (!from || date >= from) && (!through || date <= through);
+  });
+  if (sort === "newest") {
+    shown.sort((left, right) => (sourceDate(right.record) || "").localeCompare(sourceDate(left.record) || ""));
+  }
   records.replaceChildren(...shown.map(resultRow));
   byId("empty").hidden = !!shown.length;
-  setText("empty", source ? "No records match this source filter." : emptyMessage);
+  setText("empty", filtered ? "No records match these filters." : emptyMessage);
   const count = shown.length + (shown.length === 1 ? " record" : " records");
-  setText("status", !source && sourceCount > entries.length
+  setText("status", !filtered && sourceCount > entries.length
     ? count + " shown · " + sourceCount + " source rows" : count);
 }
 
@@ -241,15 +285,16 @@ function notices(lines) {
   setText("source-notice", lines.join("\n"));
 }
 
-async function search(value, source) {
+async function search(value, source, intent = intentPicker.value) {
   const compare = source === "compare";
+  const workbench = source === "workbench";
   const query = compare ? value : value.trim();
   if (compare ? !Object.keys(query).length : !query) {
     notices(["Enter at least one search."]);
     return;
   }
   clearResults("Search results");
-  lastSearch = {query, source};
+  lastSearch = {query, source, intent};
   if (!workspaceKey && source !== "crtsh") {
     setText("workspace-status", "Open a case workspace to use this search.");
     byId("workspace-key").focus();
@@ -260,10 +305,23 @@ async function search(value, source) {
   pending = request;
   const params = compare ? null : new URLSearchParams({q: query, source});
   byId("results").setAttribute("aria-busy", "true");
-  setText("status", compare ? "Searching selected sources." : "Searching " + discoverySources[source].name + ".");
+  setText("status", workbench ? "Checking relevant sources…"
+    : compare ? "Searching selected sources." : "Searching " + discoverySources[source].name + ".");
   try {
     let payload;
-    if (compare) {
+    if (workbench) {
+      const result = await api("/workbench", {method:"POST", body:{query, intent}, signal:request.signal});
+      if (request.signal.aborted) return;
+      showEntries(result.records, "No matching records from the sources that responded.",
+        result.sources.reduce((sum, item) => sum + item.available, 0));
+      renderResearchSummary(result, revealRecord);
+      if (result.sources.some(item => item.status === "unavailable")) {
+        byId("error").hidden = false;
+        byId("retry").hidden = false;
+        setText("error-message", "Some sources could not respond. Review source coverage or retry the search.");
+      }
+      return;
+    } else if (compare) {
       const batches = await api("/discover", {method:"POST", body:{queries:query}, signal:request.signal});
       if (request.signal.aborted) return;
       const failed = batches.filter(batch => batch.error);
@@ -372,7 +430,7 @@ byId("entity-timeline").addEventListener("click", () => {
   browseEvidence("/entities/" + kind + "/" + encodeURIComponent(identifier),
     "Timeline · " + label, "No records for this identifier have been saved in this workspace.");
 });
-byId("filter-source").addEventListener("change", () => {
+for (const id of filters) byId(id).addEventListener("change", () => {
   if (!listState) return;
   main.classList.remove("inspecting");
   detail.hidden = true;
@@ -396,7 +454,12 @@ byId("workspace-form").addEventListener("submit", async event => {
     updateCases(cases);
     loadCatalog();
     setText("workspace-status", "Workspace open. Searches can now be saved.");
-    if (lastSearch) search(lastSearch.query, lastSearch.source);
+    if (lastSearch) {
+      search(lastSearch.query, lastSearch.source, lastSearch.intent);
+    } else if (mode.value === "crtsh" && !new URLSearchParams(location.search).has("source")) {
+      mode.value = "workbench";
+      mode.dispatchEvent(new Event("change"));
+    }
   } catch (failure) {
     setText("workspace-status", failure.message);
   } finally {
@@ -478,10 +541,10 @@ byId("verify-record").addEventListener("click", async () => {
 byId("copy-citation").addEventListener("click", async () => {
   const {record} = selected;
   const parts = [record.title, record.source, record.id];
-  const date = record.filed_on || record.seen_at || record.occurred_at || record.published_on || record.added_on || record.logged_at;
+  const date = sourceDate(record);
   if (date) parts.push((isFiling(record) ? "Filed " : isNews(record) ? "Seen by GDELT "
     : isEarthquake(record) ? "Occurred " : isOfac(record) ? "SDN snapshot published "
-    : isAdvisory(record) ? "Added to CISA KEV " : "Logged ") + showTime(date));
+    : isAdvisory(record) ? "Added to CISA KEV " : isOrganization(record) ? "Updated in GLEIF " : "Logged ") + showTime(date));
   parts.push("Collected " + showTime(record.collected_at), record.source_url);
   const citation = parts.join(" · ");
   try {
@@ -498,11 +561,14 @@ byId("copy-citation").addEventListener("click", async () => {
 
 mode.addEventListener("change", () => {
   const compare = mode.value === "compare";
+  const workbench = mode.value === "workbench";
   byId("comparison").hidden = !compare;
   byId("single-query").hidden = compare;
   queryInput.disabled = compare;
+  byId("workbench-options").hidden = !workbench;
+  queryInput.maxLength = workbench || mode.value === "gleif" ? 160 : 253;
   if (!compare) {
-    const source = discoverySources[mode.value];
+    const source = workbench ? {label:"Research query", example:"Company, domain, CVE, or news topic"} : discoverySources[mode.value];
     setText("query-label", source.label);
     queryInput.placeholder = source.example;
   }
@@ -516,13 +582,13 @@ form.addEventListener("submit", event => {
     : queryInput.value;
   search(value, mode.value);
 });
-byId("retry").addEventListener("click", () => search(lastSearch.query, lastSearch.source));
+byId("retry").addEventListener("click", () => search(lastSearch.query, lastSearch.source, lastSearch.intent));
 byId("back").addEventListener("click", () => {
   main.classList.remove("inspecting");
   selectedButton?.focus();
 });
 const params = new URLSearchParams(location.search);
-if (Object.hasOwn(discoverySources, params.get("source"))) {
+if (params.get("source") === "workbench" || Object.hasOwn(discoverySources, params.get("source"))) {
   mode.value = params.get("source");
   mode.dispatchEvent(new Event("change"));
 }

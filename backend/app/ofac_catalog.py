@@ -70,6 +70,11 @@ def db():
     return store.database(settings.database_url)
 
 
+def has_snapshot() -> bool:
+    with db().connect() as conn:
+        return conn.execute(select(store.screening_snapshots.c.id).limit(1)).first() is not None
+
+
 def import_snapshot(payload: bytes):
     published_on, entries = parse_snapshot(payload)
     snapshot_id = hashlib.sha256(payload).hexdigest()

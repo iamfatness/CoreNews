@@ -12,6 +12,7 @@ x-app: &app
     GDELT_ENABLED: "${GDELT_ENABLED:-false}"
     CISA_KEV_ENABLED: "${CISA_KEV_ENABLED:-false}"
     GLEIF_ENABLED: "${GLEIF_ENABLED:-false}"
+    RDAP_ENABLED: "${RDAP_ENABLED:-false}"
     RESEARCH_WATCHES_ENABLED: "${RESEARCH_WATCHES_ENABLED:-false}"
 
 services:

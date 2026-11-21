@@ -18,6 +18,7 @@ from ..config import settings
 from ..connectors.cisa_kev import CVE
 from ..connectors.gdelt import NewsRecord
 from ..connectors.gleif import LEI
+from ..connectors.rdap import registry_domain
 from ..records import normalize_domain
 from ..workspace_access import issue_proof
 from . import geo, research
@@ -93,7 +94,11 @@ def plan(query: str, intent: Intent) -> tuple[Intent, dict[str, str]]:
     if intent == "domain":
         if not host:
             raise HTTPException(422, "Enter a domain or a website URL.")
-        return intent, {"crtsh": host, "gdelt": host}
+        registration = registry_domain(host)
+        queries = {"crtsh": host, "gdelt": host}
+        if registration:
+            queries["rdap"] = registration
+        return intent, queries
     if intent == "advisory":
         if not CVE.fullmatch(query.upper()):
             raise HTTPException(422, "Enter a CVE identifier in the form CVE-YYYY-NNNN.")
@@ -133,6 +138,7 @@ async def fetch(workspace_id: str, source: str, query: str) -> Batch:
     enabled = {
         "edgar": bool(settings.edgar_user_agent), "gdelt": settings.gdelt_enabled,
         "cisa": settings.cisa_kev_enabled, "gleif": settings.gleif_enabled,
+        "rdap": settings.rdap_enabled,
     }
     if not enabled.get(source, True):
         outcome.status = "setup_required"
@@ -173,11 +179,18 @@ async def fetch(workspace_id: str, source: str, query: str) -> Batch:
 def derive_insights(batches: dict[str, Batch]) -> list[Insight]:
     found = {key: [item.record for item in batch.records] for key, batch in batches.items() if batch.records}
     insights = []
-    if len(found) > 1:
+    domain_comparison = "rdap" in found and "crtsh" in found
+    if len(found) > 1 and not domain_comparison:
         insights.append(Insight(
             title="Compare records across sources",
             explanation="Each linked record comes from a different source. Open the originals to compare what each establishes.",
             record_ids=[rows[0].id for rows in found.values()],
+        ))
+    if domain_comparison:
+        insights.append(Insight(
+            title="Compare registration and certificate records",
+            explanation="RDAP shows registry status and key dates for the registered domain. Certificate logs show the names recorded on certificates.",
+            record_ids=[found["rdap"][0].id, found["crtsh"][0].id],
         ))
     if len(found.get("gleif", [])) > 1:
         insights.append(Insight(

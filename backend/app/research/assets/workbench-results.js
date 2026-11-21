@@ -28,7 +28,7 @@ export function renderResearchSummary(data, reveal) {
   const completed = data.sources.filter(source => ["results", "no_match"].includes(source.status)).length;
   const blocked = data.sources.filter(source => ["unavailable", "setup_required"].includes(source.status)).length;
   byId("research-coverage-label").textContent = "Source coverage · " + intentLabels[data.intent] + " · " + completed + " checked"
-    + (blocked ? " · " + blocked + " need attention" : "");
+    + (blocked ? " · " + blocked + (blocked === 1 ? " needs attention" : " need attention") : "");
   byId("research-coverage").open = !data.records.length;
   statuses.replaceChildren(...data.sources.map(source => {
     const item = node("li");

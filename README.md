@@ -62,6 +62,7 @@ environment, configure these server settings before starting the app:
 | `GDELT_ENABLED` | Set to `true` after verifying upstream access and metadata policy on the deployment host. The default is disabled. |
 | `CISA_KEV_ENABLED` | Set to `true` after verifying access to CISA's public catalog mirror from the deployment host. The default is disabled. |
 | `GLEIF_ENABLED` | Set to `true` after verifying access to the public LEI registry from the deployment host. The default is disabled. |
+| `RDAP_ENABLED` | Set to `true` after verifying access and permitted metadata use for the supported domain registries from the deployment host. The default is disabled. |
 | `RESEARCH_WORKSPACE_TOKEN_HASHES` | JSON object mapping workspace names to unique, lowercase SHA-256 digests. Generate an independent random key for each workspace and give the raw key only to the appropriate tester. |
 | `RESEARCH_SIGNING_KEY` | An independent random server secret of at least 32 bytes. |
 | `RESEARCH_SNAPSHOT_SOURCES` | Optional JSON array of source labels whose normalized metadata may be kept as a verifiable snapshot. Use the labels `crt.sh` and `SEC EDGAR`. The default enables no snapshot hashes. |
@@ -94,7 +95,7 @@ or news topic. CoreNews routes the query to compatible sources. Use
 
 | Query | Sources CoreNews checks |
 | --- | --- |
-| Website or domain | crt.sh and GDELT. A website URL is reduced to its hostname. |
+| Website or domain | crt.sh, GDELT, and registry RDAP for .com, .net, and .org. A website URL is reduced to its hostname. |
 | Organization name | GLEIF, the latest imported OFAC SDN snapshot, and GDELT. |
 | SEC ticker or CIK | SEC EDGAR and GDELT. If filings resolve a company name, CoreNews checks GLEIF and OFAC using that name. |
 | LEI | GLEIF. If the LEI resolves a legal name, CoreNews checks OFAC and GDELT using that name. |
@@ -116,6 +117,13 @@ The GLEIF lookup accepts a direct LEI or exact-name matches from the first
 last update. **View entity timeline** groups saved registry records by exact
 LEI. See the [GLEIF API documentation](https://www.gleif.org/en/lei-data/gleif-api/).
 
+Registry RDAP looks up the registered domain under .com, .net, or .org.
+For a subdomain, source coverage shows the distinct hostname and registered
+domain queries. A record includes registry status and available registration,
+change and expiry dates. CoreNews captures these public metadata fields and
+omits contact records. The citation links to the authoritative registry
+listed in the [IANA RDAP directory](https://data.iana.org/rdap/dns.json).
+
 Integrations can call `POST /api/research/workbench` with a workspace
 credential and a JSON body containing `query` and optional `intent`. The response
 includes source outcomes, original-record references, evidence save proofs,
@@ -125,7 +133,8 @@ and insights that reference record IDs.
 
 Open a workspace and expand **Source catalog** to see configured sources and
 their supported inputs. Choose **Compare sources** and enter a domain, a
-company ticker or CIK, legal name or LEI, CVE, or a news topic in their respective fields. Failed
+company ticker or CIK, legal name or LEI, CVE, or a news topic in their respective fields.
+Registry RDAP has its own domain field. Failed
 sources are identified individually. Use **Filter by source** above the
 results to narrow the completed search. GDELT records contain the indexed
 headline, the publisher link, and the indexing time where supplied. Follow

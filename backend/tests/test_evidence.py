@@ -17,7 +17,7 @@ from sqlalchemy.schema import CreateSchema, DropSchema
 
 from app.config import settings
 from app import ofac_catalog, watch_store, watch_worker
-from app.connectors import gleif
+from app.connectors import gleif, rdap
 from app.connectors.cisa_kev import CATALOG, normalize_catalog
 from app.connectors.edgar import EdgarConnector
 from app.connectors.gdelt import normalize_news
@@ -495,6 +495,51 @@ class ResearchEvidenceTests(unittest.TestCase):
         self.assertEqual(self.client.get(path, headers=headers("second")).json()["records"], [])
         report = self.client.get(ROOT + f"/cases/{case}/report", headers=headers("first")).json()
         self.assertEqual(report["evidence"][0]["date_label"], "Updated in GLEIF")
+
+    def test_domain_workbench_keeps_registry_and_certificate_queries_distinct(self):
+        fixture = {
+            "objectClassName": "domain", "ldhName": "EXAMPLE.ORG", "status": ["active"],
+            "events": [
+                {"eventAction": "registration", "eventDate": "2000-01-01T00:00:00Z"},
+                {"eventAction": "last changed", "eventDate": "2026-01-01T00:00:00Z"},
+                {"eventAction": "last update of RDAP database", "eventDate": "2026-11-20T00:00:00Z"},
+            ],
+            "entities": [{"roles": ["registrant"], "handle": "fixture-contact"}],
+        }
+        record = rdap.normalize("example.org", fixture)
+        with self.assertRaisesRegex(ValueError, "different domain"):
+            rdap.normalize("different.org", fixture)
+        self.assertEqual(self.search("first", "rdap", "example.org").status_code, 503)
+        endpoint = ROOT + "/workbench"
+        with patch.object(settings, "rdap_enabled", True), \
+             patch.object(rdap, "search", AsyncMock(return_value=rdap.DomainResults(
+                 query="example.org", total=1, records=[record],
+             ))) as registry, \
+             patch.object(search.crtsh, "search_domain", AsyncMock(return_value=CERTIFICATES)) as certificates, \
+             patch.object(research.gdelt, "search", AsyncMock(side_effect=httpx.ReadTimeout("fixture"))):
+            response = self.client.post(endpoint, json={"query": "https://www.example.org/"},
+                                        headers=headers("first"))
+            self.assertEqual(response.status_code, 200, response.text)
+            registry.assert_awaited_once_with("example.org")
+            certificates.assert_awaited_once_with("www.example.org")
+            unsupported = self.client.post(endpoint, json={"query": "example.test"}, headers=headers("first")).json()
+            self.assertEqual({row["id"]: row["status"] for row in unsupported["sources"]}["rdap"], "not_applicable")
+            registry.assert_awaited_once()
+        result = response.json()
+        sources = {row["id"]: row for row in result["sources"]}
+        self.assertEqual(sources["rdap"]["query"], "example.org")
+        self.assertEqual(sources["crtsh"]["query"], "www.example.org")
+        self.assertEqual(result["insights"][0]["title"], "Compare registration and certificate records")
+        self.assertIn(record.id, result["insights"][0]["record_ids"])
+        registry_selection = next(item for item in result["records"] if item["record"]["source"] == rdap.SOURCE)
+        self.assertNotIn("entities", registry_selection["record"])
+        self.assertNotIn("fixture-contact", str(registry_selection))
+        case = self.create("first")
+        self.assertEqual(self.save("first", case, registry_selection).status_code, 200)
+        timeline = self.client.get(ROOT + "/entities/domain/example.org", headers=headers("first")).json()["records"]
+        self.assertEqual([row["record"]["id"] for row in timeline], [record.id])
+        self.assertEqual(timeline[0]["date_label"], "Changed in registry")
+        self.assertTrue(timeline[0]["observed_at"].startswith("2026-01-01"))
 
     def test_news_and_certificate_timeline_uses_saved_workspace_evidence(self):
         news = normalize_news("port strike", {"articles": [

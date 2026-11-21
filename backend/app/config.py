@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     gdelt_enabled: bool = False
     cisa_kev_enabled: bool = False
     gleif_enabled: bool = False
+    rdap_enabled: bool = False
     research_watches_enabled: bool = False
     research_workspace_token_hashes: dict[str, str] = Field(default_factory=dict)
     research_signing_key: SecretStr | None = None

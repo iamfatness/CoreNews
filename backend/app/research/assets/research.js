@@ -35,6 +35,7 @@ const discoverySources = {
   gdelt: {name:"GDELT", label:"News topic", example:"port strike"},
   cisa: {name:"CISA KEV", label:"CVE identifier", example:"CVE-2024-1234"},
   gleif: {name:"GLEIF", label:"Legal name or LEI", example:"Apple Inc."},
+  rdap: {name:"Registry RDAP", label:"Domain", example:"example.org"},
 };
 
 function setText(id, value) {
@@ -73,14 +74,19 @@ function isOrganization(record) {
   return record.record_type === "legal_entity";
 }
 
+function isRegistration(record) {
+  return record.record_type === "domain_registration";
+}
+
 function sourceDate(record) {
   return record.filed_on || record.seen_at || record.occurred_at || record.published_on
-    || record.added_on || record.updated_at || record.logged_at;
+    || record.added_on || record.updated_at || record.registry_changed_at || record.registered_at || record.logged_at;
 }
 
 function entityFor(record) {
   if (isFiling(record)) return ["company", record.cik, record.company];
   if (isOrganization(record)) return ["organization", record.lei, record.title];
+  if (isRegistration(record)) return ["domain", record.domain, record.domain];
   if (isEarthquake(record) || isOfac(record) || isAdvisory(record)) return null;
   const domain = isNews(record) ? record.publisher_domain
     : [...(record.names || []), record.title].find(name => /^[a-z0-9.-]+\.[a-z0-9-]+$/i.test(name));
@@ -108,6 +114,10 @@ function recordFields(record) {
        ["Entity status", record.entity_status || "Not provided"],
        ["LEI registration status", record.registration_status || "Not provided"],
        ["Updated in GLEIF", showTime(record.updated_at)]]
+    : isRegistration(record)
+    ? [["Registered domain", record.domain], ["Registered", showTime(record.registered_at)],
+       ["Registry change", showTime(record.registry_changed_at)], ["Expires", showTime(record.expires_at)],
+       ["Registry status", record.statuses.join(", ") || "Not provided"]]
     : [["Logged by source", showTime(record.logged_at)], ["Valid from", showTime(record.valid_from)],
        ["Valid until", showTime(record.valid_until)], ["Issuer", record.issuer || "Not provided"]];
   return [["Collected by CoreNews", showTime(record.collected_at)], ...sourceFields];
@@ -140,7 +150,7 @@ function openRecord(entry, button) {
   setText("detail-title", record.title);
   const kind = {sec_filing:"Company filing", news_article:"News article", earthquake:"Earthquake",
     ofac_candidate:"Organization screening candidate", cisa_advisory:"Remediation advisory", legal_entity:"Organization registry record",
-    certificate_transparency:"Certificate record"};
+    domain_registration:"Domain registration record", certificate_transparency:"Certificate record"};
   setText("record-kind", kind[record.record_type]);
   setText("attribution", record.source + " · " + record.id.split(":").at(-1));
   byId("original").href = record.source_url;
@@ -161,6 +171,7 @@ function openRecord(entry, button) {
     : isOfac(record) ? "The primary name in this SDN snapshot matched the organization name entered."
     : isAdvisory(record) ? (record.action || "CISA lists this CVE in its remediation catalog.")
     : isOrganization(record) ? "GLEIF links this LEI to the listed legal name and jurisdiction."
+    : isRegistration(record) ? "The authoritative registry published these registration dates and status codes."
     : "The certificate log lists names on the certificate and the issuer when available.");
   setText("record-limits", filing
     ? "A filing records the filer’s disclosure. Check the document for the claim you want to cite."
@@ -169,6 +180,7 @@ function openRecord(entry, button) {
     : isOfac(record) ? "A name match alone cannot establish identity or sanctions status. Review the underlying OFAC entry."
     : isAdvisory(record) ? "Check the vendor's guidance for affected versions in your environment. The CISA deadline applies to covered U.S. federal agencies."
     : isOrganization(record) ? "Check the legal identifier and jurisdiction before linking this record to an organization in another source."
+    : isRegistration(record) ? "Registration metadata describes the domain at the registry. Use independent evidence to verify who controls a website."
     : "The log entry alone cannot establish who operates a domain or whether the certificate is currently in use.");
   const names = record.names || [];
   byId("names").hidden = !names.length;
@@ -215,6 +227,7 @@ function resultRow(entry) {
     : isOfac(record) ? "SDN snapshot published " + record.published_on
     : isAdvisory(record) ? "Added to CISA KEV " + record.added_on
     : isOrganization(record) ? record.lei + (record.jurisdiction ? " · " + record.jurisdiction : "")
+    : isRegistration(record) ? (record.registered_at ? "Registered " + showTime(record.registered_at) : "Registration date unavailable")
     : record.issuer || "Issuer not provided";
   button.append(meta, title, summary);
   button.addEventListener("click", () => openRecord(entry, button));
@@ -544,7 +557,9 @@ byId("copy-citation").addEventListener("click", async () => {
   const date = sourceDate(record);
   if (date) parts.push((isFiling(record) ? "Filed " : isNews(record) ? "Seen by GDELT "
     : isEarthquake(record) ? "Occurred " : isOfac(record) ? "SDN snapshot published "
-    : isAdvisory(record) ? "Added to CISA KEV " : isOrganization(record) ? "Updated in GLEIF " : "Logged ") + showTime(date));
+    : isAdvisory(record) ? "Added to CISA KEV " : isOrganization(record) ? "Updated in GLEIF "
+    : isRegistration(record) ? (record.registry_changed_at ? "Changed in registry " : "Registered ")
+    : "Logged ") + showTime(date));
   parts.push("Collected " + showTime(record.collected_at), record.source_url);
   const citation = parts.join(" · ");
   try {

@@ -12,6 +12,7 @@ See [review deployment and verification](docs/review-deployment.md).
 
 ## Quick Links
 - [Documentation index](docs/README.md)
+- [Research notes](docs/research/)
 - [System specification](docs/spec/SYSTEM_SPEC.md)
 - [Build roadmap](docs/roadmap/ROADMAP.md)
 - [Platform Specification](docs/SPEC.md)

@@ -9,7 +9,11 @@ CoreNews is a provenance-first, license-aware OSINT workbench. These pages are t
 | [Review deployment](review-deployment.md) | Start the integrated app for controlled review and verify a release candidate |
 | [Platform specification](SPEC.md) | Earlier short sketch of the platform |
 | [Free sources inventory](SOURCES.md) | Keyless sources and free-tier accounts already noted for the project |
+| [News map research and design](research/NEWS_MAP.md) | Map stack, basemaps, geolocation, geo event layers, and a PostGIS sketch |
+| [Best-in-class benchmark](research/BEST_IN_CLASS_BENCHMARK.md) | Product benchmark, published pricing anchors, and roadmap checklist |
+| [OSINT source catalog](research/SOURCE_CATALOG.md) | Sources already in CoreNews, the 39-source news and maps expansion, and the original 76-source catalog |
+| [Competitive gap analysis](research/COMPETITIVE_GAP_ANALYSIS.md) | Coverage matrix, competitor snapshot, and prioritized gaps |
 
-The catalog (CoreNews OSINT Source Catalog) and the Competitive Gap Analysis are named as inputs in the system specification. External canvas links are omitted from this copy.
+The source catalog and the competitive gap analysis are inputs named in the system specification. License notes in the research pages are not legal advice.
 
 The specification's scope section records a greenfield assumption from the design document. This repository already contains the v0.1 skeleton described in the [root README](../README.md), so Phase 0 is also the gap-fit review the specification describes when an application already exists.

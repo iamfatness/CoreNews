@@ -12,6 +12,7 @@ Every duration, team size, and target is an estimate; license statuses come from
 - [Dependencies](#dependencies)
 - [Risks](#risks)
 - [Open decisions and first two weeks](#open-decisions-and-first-two-weeks)
+- [Related research](#related-research)
 
 ## Planning figures
 
@@ -296,7 +297,10 @@ Likelihood and impact are judgments, not measurements.
 ## Related documents
 
 - [System specification](../spec/SYSTEM_SPEC.md)
-- CoreNews OSINT Source Catalog
-- CoreNews Competitive Gap Analysis
 
-External canvas links are omitted from this copy.
+## Related research
+
+- [News map research and design](../research/NEWS_MAP.md)
+- [Best-in-class benchmark](../research/BEST_IN_CLASS_BENCHMARK.md)
+- [OSINT source catalog](../research/SOURCE_CATALOG.md)
+- [Competitive gap analysis](../research/COMPETITIVE_GAP_ANALYSIS.md)

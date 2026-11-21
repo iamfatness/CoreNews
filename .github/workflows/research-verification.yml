@@ -50,6 +50,7 @@ jobs:
       CORENEWS_DB_PASSWORD: ci-compose-fixture
       RESEARCH_SIGNING_KEY: ci-compose-fixture-signing-key-only
       CORENEWS_SMOKE_KEY: ci-compose-fixture-workspace
+      RESEARCH_INVESTIGATION_SOURCES: '["SEC EDGAR","GDELT","OFAC SDN"]'
     steps:
       - uses: actions/checkout@v4
       - name: Configure disposable workspace
@@ -57,7 +58,7 @@ jobs:
           python3 -c 'import hashlib, json, os; digest = hashlib.sha256(os.environ["CORENEWS_SMOKE_KEY"].encode()).hexdigest(); print("RESEARCH_WORKSPACE_TOKEN_HASHES=" + json.dumps({"smoke": digest}))' >> "$GITHUB_ENV"
       - name: Build and start review stack
         run: docker compose -f compose.review.yml up -d --build
-      - name: Verify workspace, evidence, report, and activity
+      - name: Verify workspace, evidence, investigation, report, and activity
         run: |
           curl --fail --silent --show-error --retry 12 --retry-delay 2 --retry-all-errors http://127.0.0.1:8080/ready
           docker compose -f compose.review.yml exec -T backend python -m app.ofac_catalog /dev/stdin <<'XML'

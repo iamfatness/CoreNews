@@ -5,6 +5,7 @@ import { wireOfacScreening } from "./ofac-screening.js";
 import { wireCaseActivity } from "./case-activity.js";
 import { wireScreeningReview } from "./screening-review.js";
 import { renderResearchSummary } from "./workbench-results.js";
+import { wireInvestigations } from "./investigations.js";
 
 const byId = id => document.getElementById(id);
 const form = byId("search-form");
@@ -23,6 +24,7 @@ wireEarthquakeMap(api, () => casePicker.value);
 wireOfacScreening(api, () => casePicker.value);
 wireCaseActivity(api, () => casePicker.value, showTime);
 wireScreeningReview(api, () => selected);
+const investigations = wireInvestigations(api, () => casePicker.value);
 let pending;
 let lastSearch;
 let workspaceKey;
@@ -248,6 +250,7 @@ function clearResults(heading) {
   byId("source-notice").hidden = true;
   byId("filter-tools").hidden = true;
   byId("workbench-summary").hidden = true;
+  investigations.clearSearch();
   resetFilters();
   listState = undefined;
   records.replaceChildren();
@@ -328,6 +331,7 @@ async function search(value, source, intent = intentPicker.value) {
       showEntries(result.records, "No matching records from the sources that responded.",
         result.sources.reduce((sum, item) => sum + item.available, 0));
       renderResearchSummary(result, revealRecord);
+      investigations.setSearch({query, intent:result.intent});
       if (result.sources.some(item => item.status === "unavailable")) {
         byId("error").hidden = false;
         byId("retry").hidden = false;
@@ -383,6 +387,7 @@ function updateCases(cases, activeId) {
   byId("open-case-report").disabled = !casePicker.value;
   byId("open-case-activity").disabled = !casePicker.value;
   byId("open-case-watches").disabled = !casePicker.value;
+  byId("open-investigations").disabled = !casePicker.value;
   byId("save-record").disabled = !casePicker.value;
 }
 
@@ -504,6 +509,7 @@ casePicker.addEventListener("change", () => {
   byId("open-case-report").disabled = !casePicker.value;
   byId("open-case-activity").disabled = !casePicker.value;
   byId("open-case-watches").disabled = !casePicker.value;
+  byId("open-investigations").disabled = !casePicker.value;
   byId("save-record").disabled = !casePicker.value;
   if (byId("results-title").textContent === "Saved evidence") {
     clearResults("Saved evidence");

@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     research_workspace_token_hashes: dict[str, str] = Field(default_factory=dict)
     research_signing_key: SecretStr | None = None
     research_snapshot_sources: set[str] = Field(default_factory=set)
+    research_investigation_sources: set[str] = Field(default_factory=lambda: {"SEC EDGAR", "GDELT"})
 
     @field_validator("research_workspace_token_hashes")
     @classmethod

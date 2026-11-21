@@ -28,15 +28,16 @@ together in a disposable environment.
 
 ## Verify on the intended host
 
-CI builds the review stack, imports a synthetic OFAC snapshot into it, and
-exercises workspace access, a case, screened evidence, a cited report, and
-case activity. For a hosted review, run the following checks against that
-deployment too.
+CI builds the review stack, imports synthetic OFAC snapshots, and exercises
+workspace access, case evidence, saved investigation comparisons, a cited
+report, and case activity. For a hosted review, run the following checks
+against that deployment too.
 
 | Area | Verification |
 | --- | --- |
 | Data sources | Query each enabled upstream from the intended host. Sample originals and check collected time, source time and attribution. Set SEC request identity and enable GDELT only after live verification. |
 | Monitoring | Set `RESEARCH_WATCHES_ENABLED=true` after source verification and start the Compose stack with `--profile monitoring`. Observe a baseline, a new result, duplicate suppression and restart recovery. |
+| Saved investigations | Enable run history for approved sources, save a workbench query to a case, compare another run after a source change, and add a cited finding. Check that an unavailable source preserves its baseline. |
 | Screening | Import the original SDN XML, keep its SHA-256, and reproduce a source citation against the selected version. In a POSIX shell, run `docker compose --env-file .env.review -f compose.review.yml exec -T backend python -m app.ofac_catalog /dev/stdin < SDN.XML`. |
 | Research workflow | Save original records to a case, verify a metadata hash for an approved source, cite evidence in a report, and inspect case activity. Open another workspace and verify its cases and activity are isolated. |
 | Recovery | Restore a PostgreSQL backup in a disposable stack, check `/ready`, and reopen a saved case with its findings and evidence. |

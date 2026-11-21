@@ -58,6 +58,23 @@ select { max-width: 100%; }
 #research-insights h3 { margin: 12px 0 7px; font-size: 16px; }
 #research-insight-list > li { background: white; border: 1px solid var(--line); border-left: 3px solid var(--indigo); border-radius: 6px; padding: 10px 12px; margin-bottom: 7px; overflow-wrap: anywhere; }
 .insight-link { min-height: 36px; border: 0; padding: 4px 0; background: transparent; color: var(--indigo); text-decoration: underline; text-align: left; overflow-wrap: anywhere; }
+#save-investigation-status { color: var(--slate); }
+#workbench-summary > .case-actions { margin-block: 0 10px; }
+.investigation-layout { display: grid; grid-template-columns: minmax(10rem, .65fr) minmax(0, 1.5fr); gap: 18px; margin-top: 16px; }
+.investigation-list, #investigation-runs { list-style: none; padding: 0; margin: 4px 0 12px; }
+#investigation-runs button { margin-top: 4px; text-align: left; }
+#investigation-runs button[aria-pressed="true"] { background: var(--selection); border-color: var(--indigo); }
+.investigation-change, .investigation-group { border-top: 1px solid var(--line); padding-block: 10px; overflow-wrap: anywhere; }
+#investigation-run-detail details, .investigation-change > button { margin-block: 6px; }
+.investigation-change h4 { margin: 2px 0; }
+.investigation-change textarea { display: block; width: 100%; margin-block: 4px; }
+.investigation-change form { margin-top: 8px; }
+.investigation-change dd { overflow-wrap: anywhere; }
+.investigation-change dl { display: block; }
+.investigation-change dl > div + div { margin-top: 6px; }
+#investigation-schedule { margin-top: 10px; }
+#investigation-dialog summary { cursor: pointer; font-weight: 650; }
+@media (max-width: 650px) { .investigation-layout { grid-template-columns: 1fr; } }
 #source-notice { white-space: pre-line; }
 #record-status:not(:empty), #workspace-status:not(:empty) { margin-top: 8px; }
 #citation-text { width: 100%; margin-top: 8px; }

@@ -4,9 +4,12 @@ import asyncio
 import logging
 
 from fastapi import HTTPException
+from starlette.concurrency import run_in_threadpool
 
+from . import investigation_store
 from . import watch_store as watches
 from .config import settings
+from .routers.investigations import run_investigation
 from .routers.research import lookup_filings, lookup_news
 
 log = logging.getLogger("corenews.watch_worker")
@@ -35,6 +38,16 @@ async def run_once() -> bool:
     return True
 
 
+async def run_due_investigation() -> bool:
+    if not settings.research_watches_enabled:
+        return False
+    claim = await run_in_threadpool(investigation_store.claim_due, watches.epoch())
+    if claim is None:
+        return False
+    await run_investigation(claim)
+    return True
+
+
 async def loop():
     if not settings.research_watches_enabled:
         raise SystemExit("Set RESEARCH_WATCHES_ENABLED=true to start the watch worker.")
@@ -44,6 +57,11 @@ async def loop():
         except Exception:
             log.exception("Watch worker failed to persist a check")
             processed = False
+        try:
+            scheduled = await run_due_investigation()
+            processed = processed or scheduled
+        except Exception:
+            log.exception("Watch worker failed to persist an investigation run")
         await asyncio.sleep(1 if processed else 15)
 
 

@@ -102,16 +102,16 @@ def checked_citations(data: FindingInput, workspace_id: str, case_id: str) -> li
 
 def report_source(row, number: int) -> ReportEvidence:
     common = {
-        "id": row["id"], "label": f"E{number}", "record_id": row["record_id"], "saved_at": row["saved_at"],
+        "id": row["id"], "label": f"E{number}", "saved_at": row["saved_at"],
         "snapshot_sha256": row["snapshot_sha256"], "verification": store.snapshot_state(row),
     }
     try:
         record = record_json.validate_json(row["record_json"])
     except ValidationError:
-        return ReportEvidence(**common, title="Saved record metadata unavailable", metadata_available=False)
+        return ReportEvidence(**common, record_id=row["record_id"], title="Saved record metadata unavailable", metadata_available=False)
     observed, label = observation_time(record)
     return ReportEvidence(
-        **common, title=record.title, source=record.source, source_url=record.source_url,
+        **common, record_id=record.id, title=record.title, source=record.source, source_url=record.source_url,
         source_date=observed, date_label=label, collected_at=record.collected_at.isoformat(),
         source_snapshot_sha256=record.snapshot_id if isinstance(record, ScreeningCandidate) else None,
         source_entry_id=record.list_uid if isinstance(record, ScreeningCandidate) else None,

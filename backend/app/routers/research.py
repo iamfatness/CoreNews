@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, StringConstraints, TypeAdapter, Validatio
 
 from .. import evidence_store as store, ofac_catalog
 from ..config import settings
-from ..connectors import gleif
+from ..connectors import gleif, rdap
 from ..connectors.cisa_kev import CATALOG, AdvisoryRecord, CisaKevConnector, normalize_cve
 from ..connectors.edgar import EdgarConnector, FilingRecord, UnknownFiler, normalize_filer
 from ..connectors.gdelt import GdeltConnector, NewsRecord, news_query
@@ -24,10 +24,11 @@ edgar = EdgarConnector()
 gdelt = GdeltConnector()
 cisa = CisaKevConnector()
 Workspace = Annotated[str, Depends(workspace)]
-Source = Literal["crtsh", "edgar", "gdelt", "cisa", "gleif"]
+Source = Literal["crtsh", "edgar", "gdelt", "cisa", "gleif", "rdap"]
 EvidenceSource = Source | Literal["ofac", "usgs"]
 Record = Annotated[
-    CertificateRecord | FilingRecord | NewsRecord | EarthquakeRecord | ScreeningCandidate | AdvisoryRecord | gleif.OrganizationRecord,
+    CertificateRecord | FilingRecord | NewsRecord | EarthquakeRecord | ScreeningCandidate | AdvisoryRecord
+    | gleif.OrganizationRecord | rdap.DomainRegistration,
     Field(discriminator="record_type"),
 ]
 record_json = TypeAdapter(Record)
@@ -38,6 +39,7 @@ SOURCES = {
     "gdelt": ("GDELT", "News topic", "port strike", "https://www.gdeltproject.org/"),
     "cisa": ("CISA KEV", "CVE identifier", "CVE-2024-1234", CATALOG),
     "gleif": (gleif.SOURCE, "Legal name or LEI", "Apple Inc.", gleif.WEBSITE),
+    "rdap": (rdap.SOURCE, "Domain ending in .com, .net, or .org", "example.org", rdap.BOOTSTRAP),
 }
 SUPPLEMENTAL_SOURCES = {
     "ofac": (ofac_catalog.SOURCE, "Exact primary organization name", "Apple Inc.", ofac_catalog.SOURCE_URL),
@@ -191,10 +193,27 @@ async def lookup_organization(query: str):
         raise HTTPException(502, "GLEIF is temporarily unavailable.") from exc
 
 
+async def lookup_registration(query: str):
+    try:
+        domain = rdap.registry_domain(query)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if not domain:
+        raise HTTPException(422, "Registry RDAP covers .com, .net and .org in this release.")
+    if not settings.rdap_enabled:
+        raise HTTPException(503, "Registry RDAP is disabled on this instance.")
+    try:
+        return await rdap.search(domain)
+    except httpx.TimeoutException as exc:
+        raise HTTPException(504, "The RDAP registry timed out. Try again.") from exc
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(502, "The RDAP registry is temporarily unavailable.") from exc
+
+
 async def source_search(workspace_id: str, source: Source, query: str) -> SearchEnvelope:
     fetch = {
         "crtsh": lookup_certificates, "edgar": lookup_filings, "gdelt": lookup_news,
-        "cisa": lookup_advisory, "gleif": lookup_organization,
+        "cisa": lookup_advisory, "gleif": lookup_organization, "rdap": lookup_registration,
     }[source]
     result = await fetch(query)
     return SearchEnvelope(
@@ -216,7 +235,7 @@ def list_sources(workspace_id: Workspace):
     enabled = {
         "crtsh": True, "edgar": bool(settings.edgar_user_agent),
         "gdelt": settings.gdelt_enabled, "cisa": settings.cisa_kev_enabled,
-        "gleif": settings.gleif_enabled,
+        "gleif": settings.gleif_enabled, "rdap": settings.rdap_enabled,
         "usgs": True, "ofac": ofac_catalog.has_snapshot(),
     }
     return [

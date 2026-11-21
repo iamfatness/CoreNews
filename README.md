@@ -61,6 +61,7 @@ environment, configure these server settings before starting the app:
 | `EDGAR_USER_AGENT` | Your application or organization name and contact email. Follow the SEC's [EDGAR access guidance](https://www.sec.gov/search-filings/edgar-search-assistance/accessing-edgar-data). |
 | `GDELT_ENABLED` | Set to `true` after verifying upstream access and metadata policy on the deployment host. The default is disabled. |
 | `CISA_KEV_ENABLED` | Set to `true` after verifying access to CISA's public catalog mirror from the deployment host. The default is disabled. |
+| `GLEIF_ENABLED` | Set to `true` after verifying access to the public LEI registry from the deployment host. The default is disabled. |
 | `RESEARCH_WORKSPACE_TOKEN_HASHES` | JSON object mapping workspace names to unique, lowercase SHA-256 digests. Generate an independent random key for each workspace and give the raw key only to the appropriate tester. |
 | `RESEARCH_SIGNING_KEY` | An independent random server secret of at least 32 bytes. |
 | `RESEARCH_SNAPSHOT_SOURCES` | Optional JSON array of source labels whose normalized metadata may be kept as a verifiable snapshot. Use the labels `crt.sh` and `SEC EDGAR`. The default enables no snapshot hashes. |
@@ -84,11 +85,47 @@ manager are separate follow-on work. Verification checks the saved normalized
 metadata against its SHA-256 digest. The source link provides access to the
 original publication.
 
-### Compare research sources and browse evidence
+### Search across sources
+
+Open a case workspace and choose **Search across sources**. Enter a domain
+or URL, organization name or identifier, CVE identifier, earthquake or place,
+or news topic. CoreNews routes the query to compatible sources. Use
+**Search as** to change the detected category.
+
+| Query | Sources CoreNews checks |
+| --- | --- |
+| Website or domain | crt.sh and GDELT. A website URL is reduced to its hostname. |
+| Organization name | GLEIF, the latest imported OFAC SDN snapshot, and GDELT. |
+| SEC ticker or CIK | SEC EDGAR and GDELT. If filings resolve a company name, CoreNews checks GLEIF and OFAC using that name. |
+| LEI | GLEIF. If the LEI resolves a legal name, CoreNews checks OFAC and GDELT using that name. |
+| CVE identifier | CISA KEV and GDELT. |
+| Earthquake query | USGS earthquake events from the past seven days and GDELT coverage. |
+| News topic | GDELT. |
+
+**Source coverage** shows which sources responded, the query each received, and
+which sources need setup or were unavailable. The workbench displays up to
+12 records per source and interleaves results to keep each available source in view.
+Filter by source or source date and sort by newest source date. **What stands
+out** links to records used to identify the latest filing, multiple LEIs for
+one name, screening candidates, or repeated headlines across domains.
+Open the underlying evidence before drawing a conclusion. Repeated headlines
+may share a publisher or wire report.
+
+The GLEIF lookup accepts a direct LEI or exact-name matches from the first
+12 registry results. Save a record to cite its LEI, jurisdiction, source and
+last update. **View entity timeline** groups saved registry records by exact
+LEI. See the [GLEIF API documentation](https://www.gleif.org/en/lei-data/gleif-api/).
+
+Integrations can call `POST /api/research/workbench` with a workspace
+credential and a JSON body containing `query` and optional `intent`. The response
+includes source outcomes, original-record references, evidence save proofs,
+and insights that reference record IDs.
+
+### Compare custom source queries and browse evidence
 
 Open a workspace and expand **Source catalog** to see configured sources and
 their supported inputs. Choose **Compare sources** and enter a domain, a
-company ticker or CIK, or a news topic in their respective fields. Failed
+company ticker or CIK, legal name or LEI, CVE, or a news topic in their respective fields. Failed
 sources are identified individually. Use **Filter by source** above the
 results to narrow the completed search. GDELT records contain the indexed
 headline, the publisher link, and the indexing time where supplied. Follow

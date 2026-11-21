@@ -17,6 +17,7 @@ from sqlalchemy.schema import CreateSchema, DropSchema
 
 from app.config import settings
 from app import ofac_catalog, watch_store, watch_worker
+from app.connectors import gleif
 from app.connectors.cisa_kev import CATALOG, normalize_catalog
 from app.connectors.edgar import EdgarConnector
 from app.connectors.gdelt import normalize_news
@@ -415,6 +416,85 @@ class ResearchEvidenceTests(unittest.TestCase):
         self.assertIn("timed out", result["edgar"]["error"])
         self.assertEqual(result["edgar"]["records"], [])
         self.assertEqual(self.client.get(ROOT + "/sources").status_code, 401)
+
+    def test_workbench_routes_websites_and_preserves_results_during_a_parallel_source_failure(self):
+        crt_started = asyncio.Event()
+        news_started = asyncio.Event()
+
+        async def certificates(domain):
+            self.assertEqual(domain, "example.org")
+            crt_started.set()
+            await asyncio.wait_for(news_started.wait(), 2)
+            return CERTIFICATES
+
+        async def news(domain):
+            self.assertEqual(domain, "example.org")
+            await asyncio.wait_for(crt_started.wait(), 2)
+            news_started.set()
+            raise httpx.ReadTimeout("fixture")
+
+        endpoint = ROOT + "/workbench"
+        body = {"query": "https://EXAMPLE.ORG/path"}
+        self.assertEqual(self.client.post(endpoint, json=body).status_code, 401)
+        with patch.object(search.crtsh, "search_domain", side_effect=certificates), \
+             patch.object(research.gdelt, "search", side_effect=news):
+            response = self.client.post(endpoint, json=body, headers=headers("first"))
+        self.assertEqual(response.status_code, 200, response.text)
+        result = response.json()
+        self.assertEqual(result["intent"], "domain")
+        sources = {item["id"]: item for item in result["sources"]}
+        self.assertEqual(sources["crtsh"]["query"], "example.org")
+        self.assertEqual(sources["crtsh"]["status"], "results")
+        self.assertEqual(sources["gdelt"]["status"], "unavailable")
+        self.assertEqual(sources["ofac"]["status"], "not_applicable")
+        record, = result["records"]
+        own, foreign = self.create("first"), self.create("second")
+        self.assertEqual(self.save("first", own, record).status_code, 200)
+        self.assertEqual(self.save("second", foreign, record).status_code, 422)
+
+    def test_organization_workbench_uses_registry_ids_and_screens_resolved_filer_names(self):
+        identifiers = ("11111111111111111111", "22222222222222222222")
+        registry = gleif.normalize("Apple Inc.", {"data": [
+            {"attributes": {"lei": lei, "entity": {"legalName": {"name": name}, "jurisdiction": "US-CA"},
+              "registration": {"status": "ISSUED", "lastUpdateDate": "2026-11-01T12:00:00Z"}}}
+            for lei, name in (*[(lei, "Apple Inc.") for lei in identifiers], ("33333333333333333333", "Apple Orchard Inc."))
+        ]})
+        self.assertEqual([item.lei for item in registry.records], list(identifiers))
+        ofac_catalog.import_snapshot(b"""<sdnList><publshInformation><Publish_Date>11/01/2026</Publish_Date>
+            <Record_Count>1</Record_Count></publshInformation>
+            <sdnEntry><uid>101</uid><lastName>Apple Inc.</lastName><sdnType>Entity</sdnType></sdnEntry></sdnList>""")
+        headlines = normalize_news("AAPL", {"articles": [
+            {"url": "https://one.example/news", "title": "Company reports its quarterly results"},
+            {"url": "https://two.example/news", "title": "Company reports its quarterly results!"},
+        ]})
+        with patch.object(settings, "gleif_enabled", True), \
+             patch.object(gleif, "search", AsyncMock(return_value=registry)) as lookup, \
+             patch.object(research.edgar, "_request", AsyncMock(side_effect=[
+                 {"0": {"ticker": "AAPL", "cik_str": 320193}}, FILINGS,
+             ])), patch.object(research.gdelt, "search", AsyncMock(return_value=headlines)):
+            response = self.client.post(ROOT + "/workbench", json={"query": "AAPL"}, headers=headers("first"))
+        self.assertEqual(response.status_code, 200, response.text)
+        lookup.assert_awaited_once_with("Apple Inc.")
+        result = response.json()
+        self.assertEqual(result["intent"], "organization")
+        sources = {item["id"]: item for item in result["sources"]}
+        self.assertEqual(sources["ofac"]["query"], "Apple Inc.")
+        self.assertEqual(sources["gleif"]["query"], "Apple Inc.")
+        evidence_ids = {item["record"]["id"] for item in result["records"]}
+        insights = {item["title"]: item["record_ids"] for item in result["insights"]}
+        self.assertEqual(set(insights["One name returned multiple LEIs"]), {"gleif:" + lei for lei in identifiers})
+        self.assertEqual(len(insights["The same headline appears on multiple domains"]), 2)
+        self.assertTrue(all(set(ids) <= evidence_ids for ids in insights.values()))
+        self.assertEqual(len({item["record"]["source"] for item in result["records"][:4]}), 4)
+        org = next(item for item in result["records"] if item["record"]["id"] == "gleif:" + identifiers[0])
+        case = self.create("first")
+        self.assertEqual(self.save("first", case, org).status_code, 200)
+        path = ROOT + f"/entities/organization/{identifiers[0]}"
+        timeline = self.client.get(path, headers=headers("first")).json()["records"]
+        self.assertEqual([row["record"]["id"] for row in timeline], [org["record"]["id"]])
+        self.assertEqual(self.client.get(path, headers=headers("second")).json()["records"], [])
+        report = self.client.get(ROOT + f"/cases/{case}/report", headers=headers("first")).json()
+        self.assertEqual(report["evidence"][0]["date_label"], "Updated in GLEIF")
 
     def test_news_and_certificate_timeline_uses_saved_workspace_evidence(self):
         news = normalize_news("port strike", {"articles": [

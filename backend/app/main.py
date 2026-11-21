@@ -8,7 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from . import evidence_store
 from .config import settings
-from .routers import case_reports, geo, monitoring, research, screening, search
+from .routers import case_reports, geo, monitoring, research, screening, search, workbench
 
 app = FastAPI(
     title="CoreNews",
@@ -30,6 +30,7 @@ app.include_router(case_reports.router)
 app.include_router(monitoring.router)
 app.include_router(geo.router)
 app.include_router(screening.router)
+app.include_router(workbench.router)
 app.mount(
     "/research",
     StaticFiles(directory=Path(__file__).with_name("research"), html=True),

@@ -6,8 +6,9 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, StringConstraints, TypeAdapter, ValidationError
 
-from .. import evidence_store as store
+from .. import evidence_store as store, ofac_catalog
 from ..config import settings
+from ..connectors import gleif
 from ..connectors.cisa_kev import CATALOG, AdvisoryRecord, CisaKevConnector, normalize_cve
 from ..connectors.edgar import EdgarConnector, FilingRecord, UnknownFiler, normalize_filer
 from ..connectors.gdelt import GdeltConnector, NewsRecord, news_query
@@ -23,9 +24,10 @@ edgar = EdgarConnector()
 gdelt = GdeltConnector()
 cisa = CisaKevConnector()
 Workspace = Annotated[str, Depends(workspace)]
-Source = Literal["crtsh", "edgar", "gdelt", "cisa"]
+Source = Literal["crtsh", "edgar", "gdelt", "cisa", "gleif"]
+EvidenceSource = Source | Literal["ofac", "usgs"]
 Record = Annotated[
-    CertificateRecord | FilingRecord | NewsRecord | EarthquakeRecord | ScreeningCandidate | AdvisoryRecord,
+    CertificateRecord | FilingRecord | NewsRecord | EarthquakeRecord | ScreeningCandidate | AdvisoryRecord | gleif.OrganizationRecord,
     Field(discriminator="record_type"),
 ]
 record_json = TypeAdapter(Record)
@@ -35,6 +37,11 @@ SOURCES = {
     "edgar": ("SEC EDGAR", "Ticker or SEC CIK", "AAPL or 0000320193", "https://www.sec.gov/edgar/search/"),
     "gdelt": ("GDELT", "News topic", "port strike", "https://www.gdeltproject.org/"),
     "cisa": ("CISA KEV", "CVE identifier", "CVE-2024-1234", CATALOG),
+    "gleif": (gleif.SOURCE, "Legal name or LEI", "Apple Inc.", gleif.WEBSITE),
+}
+SUPPLEMENTAL_SOURCES = {
+    "ofac": (ofac_catalog.SOURCE, "Exact primary organization name", "Apple Inc.", ofac_catalog.SOURCE_URL),
+    "usgs": ("USGS Earthquakes", "Earthquake or place", "earthquake Japan", "https://earthquake.usgs.gov/"),
 }
 
 
@@ -170,8 +177,25 @@ async def lookup_advisory(query: str):
         raise HTTPException(502, "CISA KEV is temporarily unavailable.") from exc
 
 
+async def lookup_organization(query: str):
+    if not settings.gleif_enabled:
+        raise HTTPException(503, "GLEIF is disabled on this instance.")
+    query = " ".join(query.split())
+    if not 2 <= len(query) <= 160:
+        raise HTTPException(422, "Enter a legal organization name or an LEI.")
+    try:
+        return await gleif.search(query)
+    except httpx.TimeoutException as exc:
+        raise HTTPException(504, "GLEIF timed out. Try again.") from exc
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(502, "GLEIF is temporarily unavailable.") from exc
+
+
 async def source_search(workspace_id: str, source: Source, query: str) -> SearchEnvelope:
-    fetch = {"crtsh": lookup_certificates, "edgar": lookup_filings, "gdelt": lookup_news, "cisa": lookup_advisory}[source]
+    fetch = {
+        "crtsh": lookup_certificates, "edgar": lookup_filings, "gdelt": lookup_news,
+        "cisa": lookup_advisory, "gleif": lookup_organization,
+    }[source]
     result = await fetch(query)
     return SearchEnvelope(
         query=result.query, source=result.source, total=result.total,
@@ -192,11 +216,13 @@ def list_sources(workspace_id: Workspace):
     enabled = {
         "crtsh": True, "edgar": bool(settings.edgar_user_agent),
         "gdelt": settings.gdelt_enabled, "cisa": settings.cisa_kev_enabled,
+        "gleif": settings.gleif_enabled,
+        "usgs": True, "ofac": ofac_catalog.has_snapshot(),
     }
     return [
         {"id": key, "name": name, "input_label": label, "example": example,
          "website": website, "enabled": enabled[key]}
-        for key, (name, label, example, website) in SOURCES.items()
+        for key, (name, label, example, website) in (SOURCES | SUPPLEMENTAL_SOURCES).items()
     ]
 
 
@@ -231,19 +257,25 @@ def scan_evidence(workspace_id: str) -> EvidenceWindow:
 
 
 @router.get("/evidence", response_model=EvidenceWindow)
-def workspace_evidence(workspace_id: Workspace, source: Source | None = None):
+def workspace_evidence(workspace_id: Workspace, source: EvidenceSource | None = None):
     result = scan_evidence(workspace_id)
     if source is not None:
-        result.records = [item for item in result.records if item.record.source == SOURCES[source][0]]
+        name = (SOURCES | SUPPLEMENTAL_SOURCES)[source][0]
+        result.records = [item for item in result.records if item.record.source == name]
     return result
 
 
 @router.get("/entities/{kind}/{key}", response_model=EvidenceWindow)
 def entity_timeline(kind: EntityKind, key: str, workspace_id: Workspace):
     try:
-        canonical = normalize_domain(key) if kind == "domain" else normalize_filer(key)
-        if kind == "company" and not canonical.isdigit():
-            raise ValueError("Company timelines require an SEC CIK.")
+        if kind == "organization":
+            canonical = key.strip().upper()
+            if not gleif.LEI.fullmatch(canonical):
+                raise ValueError("Organization timelines require an LEI.")
+        else:
+            canonical = normalize_domain(key) if kind == "domain" else normalize_filer(key)
+            if kind == "company" and not canonical.isdigit():
+                raise ValueError("Company timelines require an SEC CIK.")
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     result = scan_evidence(workspace_id)

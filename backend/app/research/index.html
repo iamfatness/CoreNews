@@ -22,10 +22,12 @@
         <form id="search-form" action="./" method="get">
           <label for="source-mode">Source</label>
           <select id="source-mode" name="source">
-            <option value="crtsh">Domain certificates · crt.sh</option>
+            <option value="workbench">Search across sources</option>
+            <option value="crtsh" selected>Domain certificates · crt.sh</option>
             <option value="edgar">Company filings · SEC EDGAR</option>
             <option value="gdelt">News coverage · GDELT</option>
             <option value="cisa">Remediation advisories · CISA KEV</option>
+            <option value="gleif">Organization registry · GLEIF</option>
             <option value="compare">Compare sources</option>
           </select>
           <div id="single-query">
@@ -33,6 +35,17 @@
           <div class="search-controls">
             <input id="domain" name="q" type="search" required maxlength="253"
               placeholder="example.org" spellcheck="false" autocapitalize="none" autocomplete="off">
+          </div>
+          <div id="workbench-options" hidden>
+            <label for="research-intent">Search as</label>
+            <select id="research-intent" name="intent">
+              <option value="auto">Detect from query</option>
+              <option value="domain">Domain</option>
+              <option value="organization">Organization</option>
+              <option value="advisory">CVE identifier</option>
+              <option value="earthquake">Earthquake</option>
+              <option value="topic">News topic</option>
+            </select>
           </div>
           </div>
           <fieldset id="comparison" hidden>
@@ -45,6 +58,8 @@
             <input id="compare-gdelt" maxlength="120" placeholder="port strike">
             <label for="compare-cisa">CVE identifier for CISA KEV</label>
             <input id="compare-cisa" maxlength="21" placeholder="CVE-2024-1234">
+            <label for="compare-gleif">Legal name or LEI for GLEIF</label>
+            <input id="compare-gleif" maxlength="160" placeholder="Apple Inc.">
           </fieldset>
           <button class="primary" id="start-search" type="submit">Search</button>
         </form>
@@ -97,7 +112,18 @@
           <button id="retry" class="secondary" type="button" hidden>Retry search</button>
         </div>
         <p id="source-notice" class="notice" role="status" hidden></p>
+        <section id="workbench-summary" aria-labelledby="research-insights-title" hidden>
+          <details id="research-coverage">
+            <summary id="research-coverage-label">Source coverage</summary>
+            <ul id="research-source-status"></ul>
+          </details>
+          <div id="research-insights">
+            <h3 id="research-insights-title">What stands out</h3>
+            <ul id="research-insight-list"></ul>
+          </div>
+        </section>
         <div id="filter-tools" hidden>
+          <div>
           <label for="filter-source">Filter by source</label>
           <select id="filter-source">
             <option value="">All sources</option>
@@ -107,7 +133,24 @@
             <option value="USGS Earthquakes">USGS Earthquakes</option>
             <option value="OFAC SDN">OFAC SDN</option>
             <option value="CISA KEV">CISA KEV</option>
+            <option value="GLEIF">GLEIF</option>
           </select>
+          </div>
+          <div>
+            <label for="filter-from">Source date from</label>
+            <input id="filter-from" type="date">
+          </div>
+          <div>
+            <label for="filter-through">Source date through</label>
+            <input id="filter-through" type="date">
+          </div>
+          <div>
+            <label for="sort-results">Sort</label>
+            <select id="sort-results">
+              <option value="source">Source order</option>
+              <option value="newest">Newest source date</option>
+            </select>
+          </div>
         </div>
         <div id="results" aria-busy="false">
           <p id="empty" class="empty">Enter a domain to look up its certificate records.</p>

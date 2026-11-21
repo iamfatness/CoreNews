@@ -3,11 +3,12 @@ from typing import Literal
 from .connectors.cisa_kev import AdvisoryRecord
 from .connectors.edgar import FilingRecord
 from .connectors.gdelt import NewsRecord
+from .connectors.gleif import OrganizationRecord
 from .connectors.usgs import EarthquakeRecord
 from .ofac_catalog import ScreeningCandidate
 from .records import CertificateRecord, ResearchRecord, normalize_domain
 
-EntityKind = Literal["domain", "company"]
+EntityKind = Literal["domain", "company", "organization"]
 
 
 def entity_domain(value: str) -> str | None:
@@ -20,6 +21,8 @@ def entity_domain(value: str) -> str | None:
 def entity_matches(record: ResearchRecord, kind: EntityKind, key: str) -> bool:
     if kind == "company":
         return isinstance(record, FilingRecord) and record.cik == key
+    if kind == "organization":
+        return isinstance(record, OrganizationRecord) and record.lei == key
     if isinstance(record, CertificateRecord):
         return any(entity_domain(name) == key for name in [record.title, *record.names])
     if isinstance(record, NewsRecord):
@@ -28,6 +31,8 @@ def entity_matches(record: ResearchRecord, kind: EntityKind, key: str) -> bool:
 
 
 def observation_time(record: ResearchRecord) -> tuple[str, str]:
+    if isinstance(record, OrganizationRecord) and record.updated_at:
+        return record.updated_at.isoformat(), "Updated in GLEIF"
     if isinstance(record, AdvisoryRecord):
         return record.added_on.isoformat(), "Added to CISA KEV"
     if isinstance(record, ScreeningCandidate):

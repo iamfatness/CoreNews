@@ -230,17 +230,19 @@ async def search(
     return await source_search(workspace_id, source, q)
 
 
-@router.get("/sources")
-def list_sources(workspace_id: Workspace):
-    enabled = {
+def source_enabled(source: str) -> bool:
+    return {
         "crtsh": True, "edgar": bool(settings.edgar_user_agent),
         "gdelt": settings.gdelt_enabled, "cisa": settings.cisa_kev_enabled,
         "gleif": settings.gleif_enabled, "rdap": settings.rdap_enabled,
-        "usgs": True, "ofac": ofac_catalog.has_snapshot(),
-    }
+    }.get(source, True)
+
+
+@router.get("/sources")
+def list_sources(workspace_id: Workspace):
     return [
         {"id": key, "name": name, "input_label": label, "example": example,
-         "website": website, "enabled": enabled[key]}
+         "website": website, "enabled": ofac_catalog.has_snapshot() if key == "ofac" else source_enabled(key)}
         for key, (name, label, example, website) in (SOURCES | SUPPLEMENTAL_SOURCES).items()
     ]
 

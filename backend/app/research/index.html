@@ -94,6 +94,7 @@
               <button class="secondary" id="open-case-report" type="button" disabled>Findings and report</button>
               <button class="secondary" id="open-case-activity" type="button" disabled>Case activity</button>
               <button class="secondary" id="open-case-watches" type="button" disabled>Watches and alerts</button>
+              <button class="secondary" id="open-investigations" type="button" disabled>Saved investigations</button>
               <button class="secondary" id="view-workspace" type="button">Browse workspace evidence</button>
               <button class="secondary" id="open-earthquake-map" type="button">Earthquake map</button>
               <button class="secondary" id="open-ofac-screening" type="button">Organization screening</button>
@@ -116,6 +117,10 @@
         </div>
         <p id="source-notice" class="notice" role="status" hidden></p>
         <section id="workbench-summary" aria-labelledby="research-insights-title" hidden>
+          <div class="case-actions">
+            <button id="save-investigation" class="secondary" type="button">Save search to case</button>
+            <span id="save-investigation-status" role="status"></span>
+          </div>
           <details id="research-coverage">
             <summary id="research-coverage-label">Source coverage</summary>
             <ul id="research-source-status"></ul>
@@ -337,6 +342,44 @@
         <textarea id="screening-rationale" rows="4" maxlength="2000" required></textarea>
         <button class="primary" type="submit">Save identity review</button>
       </form>
+    </div>
+  </dialog>
+  <dialog id="investigation-dialog" class="case-dialog" aria-labelledby="investigation-title">
+    <header class="report-toolbar">
+      <h2 id="investigation-title">Saved investigations</h2>
+      <form method="dialog"><button class="secondary">Close investigations</button></form>
+    </header>
+    <div class="report-controls">
+      <p id="investigation-status" role="status"></p>
+      <div id="investigation-controls" hidden>
+        <label for="investigation-select">Saved search</label>
+        <select id="investigation-select"></select>
+        <div class="case-actions">
+          <button id="investigation-run-now" class="primary" type="button">Run now</button>
+          <button id="investigation-refresh" class="secondary" type="button">Refresh history</button>
+        </div>
+        <form id="investigation-schedule">
+          <label for="investigation-frequency">Run schedule</label>
+          <select id="investigation-frequency">
+            <option value="">Manual only</option>
+            <option value="60">Hourly</option>
+            <option value="360">Every 6 hours</option>
+            <option value="1440">Daily</option>
+            <option value="10080">Weekly</option>
+          </select>
+          <button type="submit" class="secondary">Save schedule</button>
+          <p id="investigation-next"></p>
+        </form>
+        <div class="investigation-layout">
+          <section aria-labelledby="investigation-runs-title">
+            <h3 id="investigation-runs-title">Run history</h3>
+            <p id="investigation-pending" class="report-meta"></p>
+            <ul id="investigation-runs"></ul>
+            <button id="investigation-older" type="button" class="secondary" hidden>Load older runs</button>
+          </section>
+          <section id="investigation-run-detail" aria-label="Selected run"></section>
+        </div>
+      </div>
     </div>
   </dialog>
 </body>

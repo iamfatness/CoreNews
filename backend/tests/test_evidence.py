@@ -16,10 +16,10 @@ from sqlalchemy import create_engine, update
 from sqlalchemy.schema import CreateSchema, DropSchema
 
 from app.config import settings
-from app import ofac_catalog, watch_store, watch_worker
+from app import investigation_store as history, ofac_catalog, watch_store, watch_worker
 from app.connectors import gleif, rdap
 from app.connectors.cisa_kev import CATALOG, normalize_catalog
-from app.connectors.edgar import EdgarConnector
+from app.connectors.edgar import EdgarConnector, normalize_filings
 from app.connectors.gdelt import normalize_news
 from app.connectors.usgs import normalize_earthquakes
 from app.evidence_store import activity, database, evidence, metadata
@@ -59,6 +59,7 @@ class ResearchEvidenceTests(unittest.TestCase):
             },
             research_signing_key=SecretStr("fixture-only-signing-key-for-tests"),
             research_snapshot_sources={"SEC EDGAR"},
+            research_investigation_sources={"SEC EDGAR", "GDELT"},
             edgar_user_agent="CoreNews test contact@example.org",
             gdelt_enabled=True,
         )
@@ -92,6 +93,118 @@ class ResearchEvidenceTests(unittest.TestCase):
         response = self.client.post(ROOT + "/cases", headers=headers(workspace), json={"title":title})
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()["id"]
+
+    def test_saved_ticker_investigation_survives_outages_and_creates_one_cited_finding(self):
+        case_id = self.create("first")
+        base = ROOT + f"/cases/{case_id}"
+        collection = base + "/investigations"
+        auth = headers("first")
+        created = self.client.post(collection, headers=auth, json={"query": " AAPL "})
+        self.assertEqual(created.status_code, 201, created.text)
+        investigation = created.json()
+        similarly_saved = self.client.post(collection, headers=auth, json={"query": "AAPL"}).json()
+        self.assertEqual(similarly_saved["id"], investigation["id"])
+        root = collection + "/" + investigation["id"]
+        self.assertEqual(investigation["intent"], "organization")
+        self.assertIsNone(investigation["interval_minutes"])
+
+        old_filings = normalize_filings("AAPL", "0000320193", FILINGS)
+        changed_filings = normalize_filings("AAPL", "0000320193", {
+            **FILINGS, "filings": {"recent": {
+                "accessionNumber": ["0000320193-25-000079", "0000320193-25-000081"],
+                "form": ["10-K", "8-K"], "filingDate": ["2025-10-30", "2025-11-05"],
+            }},
+        })
+        archive = normalize_news("AAPL", {"articles": [
+            {"url": "https://one.example/old", "title": "An earlier headline already known"},
+        ]})
+        coverage = normalize_news("AAPL", {"articles": [
+            {"url": "https://one.example/new", "title": "Company published its quarterly report"},
+            {"url": "https://two.example/new", "title": "Company published its quarterly report!"},
+            {"url": "https://one.example/old", "title": "An earlier headline already known"},
+        ]})
+        with patch.object(research.edgar, "search", AsyncMock(side_effect=[
+            old_filings, changed_filings, changed_filings,
+            changed_filings.model_copy(update={"records": [], "total": 0}), changed_filings,
+        ])), patch.object(research.gdelt, "search", AsyncMock(side_effect=[
+            archive, httpx.ReadTimeout("fixture"), coverage, coverage, coverage,
+        ])):
+            observed = []
+            for expected in range(1, 6):
+                response = self.client.post(root + "/runs", headers=auth)
+                self.assertEqual(response.status_code, 201, response.text)
+                self.assertEqual(response.json()["sequence"], expected)
+                detail = self.client.get(root + "/runs/" + response.json()["id"], headers=auth)
+                self.assertEqual(detail.status_code, 200, detail.text)
+                observed.append(detail.json())
+
+        baseline, after_filing, after_recovery, empty_window, after_repeat = observed
+        self.assertEqual(baseline["change_count"], 0)
+        self.assertEqual({item["id"] for item in baseline["sources"] if item["baseline"]}, {"edgar", "gdelt"})
+        self.assertEqual({item["id"]: item["status"] for item in after_filing["sources"]}["gdelt"], "unavailable")
+        self.assertEqual(after_filing["change_count"], 2)
+        revised = next(change for change in after_filing["changes"] if change["kind"] == "updated")
+        self.assertEqual(revised["changed_fields"], ["filed_on"])
+        self.assertEqual(revised["previous"]["filed_on"], "2025-10-31")
+        self.assertEqual(revised["record"]["filed_on"], "2025-10-30")
+        self.assertEqual(after_recovery["change_count"], 2)
+        self.assertTrue(after_recovery["changes"][0]["group_key"])
+        self.assertEqual(len({change["group_key"] for change in after_recovery["changes"]}), 1)
+        self.assertIn("The same headline appears on multiple domains", {item["title"] for item in after_recovery["insights"]})
+        self.assertEqual(empty_window["change_count"], 0)
+        self.assertEqual(after_repeat["change_count"], 0)
+        run_page = self.client.get(root + "/runs", headers=auth, params={"before": after_recovery["id"]}).json()
+        self.assertEqual([row["sequence"] for row in run_page["runs"]], [2, 1])
+        self.assertEqual(run_page["pending_count"], 4)
+
+        path = root + f"/changes/{revised['id']}"
+        self.assertEqual(self.client.put(path + "/review", headers=headers("second")).status_code, 404)
+        self.assertEqual(self.client.put(path + "/review", headers=auth).json()["reviewed"], True)
+        self.assertEqual(self.client.get(root + "/runs", headers=auth).json()["pending_count"], 3)
+        finding_request = {"body": "The earlier and current index records show different filing dates."}
+        finding = self.client.put(path + "/finding", headers=auth, json=finding_request)
+        self.assertEqual(finding.status_code, 200, finding.text)
+        repeated = self.client.put(path + "/finding", headers=auth, json={"body": "Duplicate click"})
+        self.assertEqual(repeated.json()["id"], finding.json()["id"])
+        self.assertEqual(len(finding.json()["evidence_ids"]), 2)
+        report = self.client.get(base + "/report", headers=auth).json()
+        self.assertEqual(len(report["findings"]), 1)
+        self.assertEqual({item["source_date"] for item in report["evidence"]}, {"2025-10-31", "2025-10-30"})
+        self.assertEqual({item["record_id"] for item in report["evidence"]}, {revised["record"]["id"]})
+        self.assertEqual({item["verification"] for item in report["evidence"]}, {"verified"})
+        self.assertEqual(self.client.get(root + "/runs", headers=headers("second")).status_code, 404)
+
+    def test_investigation_worker_recovers_leases_and_respects_history_source_setting(self):
+        case_id = self.create("first")
+        auth = headers("first")
+        collection = ROOT + f"/cases/{case_id}/investigations"
+        saved = self.client.post(collection, headers=auth, json={"query": "https://example.org/path?secret=fixture"})
+        self.assertEqual(saved.json()["query"], "example.org")
+        root = collection + "/" + saved.json()["id"]
+        body = {"interval_minutes": 60}
+        with patch.object(settings, "research_watches_enabled", False):
+            self.assertEqual(self.client.put(root + "/schedule", headers=auth, json=body).status_code, 503)
+        with patch.object(settings, "research_watches_enabled", True), \
+             patch.object(search.crtsh, "search_domain", AsyncMock(return_value=CERTIFICATES)), \
+             patch.object(research.gdelt, "search", AsyncMock(return_value=normalize_news("example.org", {"articles": []}))):
+            schedule = self.client.put(root + "/schedule", headers=auth, json=body)
+            self.assertEqual(schedule.status_code, 200, schedule.text)
+            due = schedule.json()["next_run"]
+            original = history.claim_due(due)
+            self.assertIsNotNone(original)
+            self.assertIsNone(history.claim_due(due))
+            self.assertEqual(self.client.post(root + "/runs", headers=auth).status_code, 409)
+            with patch("app.watch_store.time", return_value=due + history.LEASE_SECONDS):
+                self.assertTrue(asyncio.run(watch_worker.run_due_investigation()))
+            self.assertIsNone(history.finish(original, due, due + history.LEASE_SECONDS, None, "stale run"))
+        runs = self.client.get(root + "/runs", headers=auth).json()["runs"]
+        self.assertEqual(len(runs), 1)
+        detail = self.client.get(root + "/runs/" + runs[0]["id"], headers=auth).json()
+        self.assertEqual(detail["records"], [])
+        states = {item["id"]: item for item in detail["sources"]}
+        self.assertEqual(states["crtsh"]["status"], "results")
+        self.assertFalse(states["crtsh"]["retained"])
+        self.assertTrue(states["gdelt"]["baseline"])
 
     def test_readiness_checks_initialized_research_schema(self):
         self.assertEqual(self.client.get("/ready").json(), {"status": "ready"})

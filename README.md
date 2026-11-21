@@ -191,6 +191,42 @@ the activity table is installed. Entries include the action, timestamp, and
 revision where applicable. The workspace key scopes the history to the
 selected case. Person-level attribution requires individual sign-in.
 
+### Saved investigations
+
+Open a workspace and run **Search across sources**. Select a case and choose
+**Save search to case**. Open **Saved investigations** to run that search
+again or revisit earlier runs. An investigation belongs to the selected case
+and keeps its query, run dates, source outcomes, and eligible record metadata.
+Rerun the evidence store initializer when upgrading an existing installation.
+
+The first successful result from each source and query establishes that
+source's baseline. Later runs call out newly observed records and changed
+metadata. A timeout leaves the comparison history intact. A record that
+falls outside a source's bounded results stays in history. Matching headlines
+are grouped for review, with the original publishers kept as separate citations.
+
+Open a run to review coverage, compare earlier and current values, or mark
+changes reviewed. **Create cited finding** adds your interpretation and
+captures the source record in the case report. For a revision it cites both
+versions. Review the source timestamps and identifiers before linking claims
+across sources.
+
+Manual reruns work from the case workspace. When
+`RESEARCH_WATCHES_ENABLED=true` and the monitoring worker is running, choose
+an hourly, six-hour, daily, or weekly schedule. The worker uses the same
+source configuration as the workbench. Set `RESEARCH_INVESTIGATION_SOURCES`
+to a JSON array of source labels approved for run history. It defaults to
+SEC EDGAR and GDELT when those sources are enabled. Other sources keep run
+coverage until their record metadata is enabled for history. The per-source
+record limit is the same as the workbench.
+
+The investigation API is under `/api/research/cases/{case_id}/investigations`.
+New workbench connectors use the discriminated research record contract with
+a stable record ID, original source link, and collection time. Return a
+source outcome that distinguishes successful empty results from errors.
+If the provider rotates an identifier on every snapshot, define its stable
+identity and collection-only fields in the comparison policy.
+
 ### Watches and alerts
 
 After validating source access on the deployment host, set

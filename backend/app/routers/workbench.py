@@ -14,7 +14,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 
 from .. import ofac_catalog
-from ..config import settings
 from ..connectors.cisa_kev import CVE
 from ..connectors.gdelt import NewsRecord
 from ..connectors.gleif import LEI
@@ -135,12 +134,7 @@ async def fetch_quakes(workspace_id: str, query: str):
 
 async def fetch(workspace_id: str, source: str, query: str) -> Batch:
     outcome = SourceOutcome(id=source, name=SOURCES[source], query=query, status="unavailable")
-    enabled = {
-        "edgar": bool(settings.edgar_user_agent), "gdelt": settings.gdelt_enabled,
-        "cisa": settings.cisa_kev_enabled, "gleif": settings.gleif_enabled,
-        "rdap": settings.rdap_enabled,
-    }
-    if not enabled.get(source, True):
+    if not research.source_enabled(source):
         outcome.status = "setup_required"
         outcome.reason = "This source is disabled or requires configuration."
         return Batch(outcome, [])
@@ -214,7 +208,7 @@ def derive_insights(batches: dict[str, Batch]) -> list[Insight]:
         ))
     headlines: dict[tuple[str, ...], list[NewsRecord]] = defaultdict(list)
     for row in found.get("gdelt", []):
-        key = tuple(re.findall(r"\w+", row.title.casefold()))
+        key = headline_key(row.title)
         if len(key) >= 4:
             headlines[key].append(row)
     repeated = sorted(headlines.values(), key=lambda group: len({row.publisher_domain for row in group}), reverse=True)
@@ -229,8 +223,16 @@ def derive_insights(batches: dict[str, Batch]) -> list[Insight]:
     return insights
 
 
+def headline_key(title: str) -> tuple[str, ...]:
+    return tuple(re.findall(r"\w+", title.casefold()))
+
+
 @router.post("/workbench", response_model=WorkbenchResults)
 async def workbench(data: WorkbenchInput, workspace_id: Workspace):
+    return await run_query(data, workspace_id)
+
+
+async def run_query(data: WorkbenchInput, workspace_id: str):
     query = " ".join(data.query.split())
     intent, queries = plan(query, data.intent)
     initial = await asyncio.gather(*(fetch(workspace_id, source, value) for source, value in queries.items()))

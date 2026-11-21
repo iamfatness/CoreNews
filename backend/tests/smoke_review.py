@@ -2,6 +2,7 @@
 
 import json
 import os
+import subprocess
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -28,7 +29,7 @@ def request(path, method="GET", body=None, *, authorized=True, expected=200):
 
 
 def main():
-    assert b"Organization screening" in request("/research/", authorized=False)
+    assert b"Saved investigations" in request("/research/", authorized=False)
     request(ROOT + "/cases", authorized=False, expected=401)
     case = json.loads(request(ROOT + "/cases", "POST", {"title": "Release smoke case"}, expected=201))
     case_path = ROOT + "/cases/" + case["id"]
@@ -54,7 +55,31 @@ def main():
     assert [entry["action"] for entry in activity["events"]] == [
         "finding_added", "screening_reviewed", "evidence_saved", "case_created",
     ]
-    print("Review stack passed workspace, screening evidence, report, and activity smoke checks.")
+    query = {"query": "Fixture Organization", "intent": "organization"}
+    investigations = case_path + "/investigations"
+    saved = json.loads(request(investigations, "POST", query, expected=201))
+    target = investigations + "/" + saved["id"]
+    baseline = json.loads(request(target + "/runs", "POST", expected=201))
+    assert baseline["sequence"] == 1 and baseline["change_count"] == 0 and not baseline["error"]
+    previous = json.loads(request(target + "/runs/" + baseline["id"]))
+    assert previous["records"][0]["snapshot_id"] == candidate["record"]["snapshot_id"]
+    subprocess.run([
+        "docker", "compose", "-f", "compose.review.yml", "exec", "-T", "backend",
+        "python", "-m", "app.ofac_catalog", "/dev/stdin",
+    ], input=b"""<sdnList><publshInformation><Publish_Date>11/02/2026</Publish_Date><Record_Count>1</Record_Count></publshInformation>
+    <sdnEntry><uid>101</uid><lastName>Fixture Organization</lastName><sdnType>Entity</sdnType>
+    <programList><program>FIXTURE</program></programList></sdnEntry></sdnList>""", check=True)
+    rerun = json.loads(request(target + "/runs", "POST", expected=201))
+    assert rerun["sequence"] == 2 and rerun["change_count"] == 1 and not rerun["error"]
+    change, = json.loads(request(target + "/runs/" + rerun["id"]))["changes"]
+    assert change["kind"] == "updated" and change["changed_fields"] == ["programs"]
+    cited = json.loads(request(target + "/changes/" + change["id"] + "/finding", "PUT", {
+        "body": "The synthetic entry has an updated program list.",
+    }))
+    updated = json.loads(request(case_path + "/report"))
+    assert any(finding["id"] == cited["id"] for finding in updated["findings"])
+    assert len(cited["evidence_ids"]) == 2
+    print("Review stack passed workspace, screening, investigation history, cited finding, and activity checks.")
 
 
 if __name__ == "__main__":

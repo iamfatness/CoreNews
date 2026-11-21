@@ -10,6 +10,8 @@ from sqlalchemy import (
     create_engine, insert, select, update,
 )
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from .config import settings
 
@@ -112,6 +114,56 @@ activity = Table(
     ForeignKeyConstraint(["workspace_id", "case_id"], [cases.c.workspace_id, cases.c.id]),
 )
 Index("ix_research_case_activity_scope", activity.c.workspace_id, activity.c.case_id, activity.c.id)
+
+investigations = Table(
+    "research_investigations", metadata,
+    Column("id", String(36), primary_key=True),
+    Column("workspace_id", String(128), nullable=False),
+    Column("case_id", String(36), nullable=False),
+    Column("query", String(160), nullable=False),
+    Column("intent", String(16), nullable=False),
+    Column("created_at", BigInteger, nullable=False),
+    Column("interval_minutes", Integer),
+    Column("next_run", BigInteger, index=True),
+    Column("lease_id", String(36)),
+    Column("lease_until", BigInteger),
+    Column("baselines_json", Text, nullable=False),
+    ForeignKeyConstraint(["workspace_id", "case_id"], [cases.c.workspace_id, cases.c.id]),
+    UniqueConstraint("workspace_id", "case_id", "query", "intent"),
+)
+investigation_runs = Table(
+    "research_investigation_runs", metadata,
+    Column("id", String(36), primary_key=True),
+    Column("investigation_id", String(36), ForeignKey(investigations.c.id), nullable=False),
+    Column("sequence", BigInteger, nullable=False),
+    Column("started_at", BigInteger, nullable=False),
+    Column("finished_at", BigInteger, nullable=False),
+    Column("source_json", Text, nullable=False),
+    Column("result_json", Text, nullable=False),
+    Column("insights_json", Text, nullable=False),
+    Column("change_count", Integer, nullable=False),
+    Column("error", String(160)),
+    UniqueConstraint("investigation_id", "sequence"),
+)
+investigation_seen = Table(
+    "research_investigation_seen", metadata,
+    Column("investigation_id", String(36), ForeignKey(investigations.c.id), primary_key=True),
+    Column("scope", String(64), primary_key=True),
+    Column("identity", String(128), primary_key=True),
+    Column("fingerprint", String(64), nullable=False),
+    Column("record_json", Text, nullable=False),
+)
+investigation_changes = Table(
+    "research_investigation_changes", metadata,
+    Column("id", String(36), primary_key=True),
+    Column("run_id", String(36), ForeignKey(investigation_runs.c.id), nullable=False),
+    Column("kind", String(12), nullable=False),
+    Column("record_json", Text, nullable=False),
+    Column("previous_json", Text),
+    Column("reviewed", Boolean, nullable=False),
+    Column("finding_id", String(36), ForeignKey(findings.c.id)),
+)
+Index("ix_research_investigation_changes_run", investigation_changes.c.run_id, investigation_changes.c.id)
 
 
 @lru_cache(maxsize=1)
@@ -264,15 +316,19 @@ def citations_belong_to_case(workspace_id: str, case_id: str, evidence_ids: list
 
 
 def create_finding(workspace_id: str, case_id: str, kind: str, body: str, evidence_ids: list[str]):
+    with database(settings.database_url).begin() as conn:
+        return insert_finding(conn, workspace_id, case_id, kind, body, evidence_ids)
+
+
+def insert_finding(conn, workspace_id: str, case_id: str, kind: str, body: str, evidence_ids: list[str]):
     timestamp = now()
     values = {
         "id": str(uuid4()), "workspace_id": workspace_id, "case_id": case_id,
         "kind": kind, "body": body, "evidence_ids": json.dumps(evidence_ids),
         "version": 1, "created_at": timestamp, "updated_at": timestamp,
     }
-    with database(settings.database_url).begin() as conn:
-        conn.execute(insert(findings).values(**values))
-        record_activity(conn, workspace_id, case_id, "finding_added", values["id"], timestamp, version=1)
+    conn.execute(insert(findings).values(**values))
+    record_activity(conn, workspace_id, case_id, "finding_added", values["id"], timestamp, version=1)
     return values
 
 
@@ -300,26 +356,26 @@ def snapshot_state(row) -> str:
 
 
 def save_record(workspace_id: str, case_id: str, record_id: str, payload: str, snapshot: bool):
-    engine = database(settings.database_url)
+    with database(settings.database_url).begin() as conn:
+        return capture_record(conn, workspace_id, case_id, record_id, payload, snapshot)
+
+
+def capture_record(conn, workspace_id: str, case_id: str, record_id: str, payload: str, snapshot: bool):
     values = {
         "id": str(uuid4()), "workspace_id": workspace_id, "case_id": case_id,
         "record_id": record_id, "record_json": payload,
         "snapshot_sha256": digest(payload) if snapshot else None, "saved_at": now(),
     }
-    try:
-        with engine.begin() as conn:
-            conn.execute(insert(evidence).values(**values))
-            record_activity(conn, workspace_id, case_id, "evidence_saved", values["id"], values["saved_at"])
-    except IntegrityError:
-        # The unique key preserves the first capture on repeated or racing saves.
-        with engine.connect() as conn:
-            existing = conn.execute(select(evidence).where(
-                evidence.c.workspace_id == workspace_id, evidence.c.case_id == case_id,
-                evidence.c.record_id == record_id,
-            )).mappings().one_or_none()
-        if existing is not None:
-            return existing
-        raise
+    write = postgres_insert if conn.dialect.name == "postgresql" else sqlite_insert
+    result = conn.execute(write(evidence).values(**values).on_conflict_do_nothing(
+        index_elements=[evidence.c.workspace_id, evidence.c.case_id, evidence.c.record_id],
+    ))
+    if not result.rowcount:
+        return conn.execute(select(evidence).where(
+            evidence.c.workspace_id == workspace_id, evidence.c.case_id == case_id,
+            evidence.c.record_id == record_id,
+        )).mappings().one()
+    record_activity(conn, workspace_id, case_id, "evidence_saved", values["id"], values["saved_at"])
     return values
 
 
